@@ -1,4 +1,0 @@
-module DSPKit {
-header "DSPKit-Swift.h"
-export *
-}

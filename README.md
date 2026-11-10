@@ -1,4 +1,4 @@
-# PocketSynth
+# pocket-synth
 
 An iOS instrument app with two panels:
 
