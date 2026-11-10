@@ -10,12 +10,45 @@ namespace ps {
 
 class Looper {
 public:
+    static constexpr int kMidiEvents = 2048;
+    struct LoopMidi { int pos; uint8_t note, velocity; };  // velocity 0 = off
+
     struct Track {
         PSSample *buffer = nullptr;
         int state = PS_LOOP_OFF;
         int generation = 0;
         float gain = 1, smoothed = 1;
+        std::array<LoopMidi, kMidiEvents> midi{};
+        int midiCount = 0;
+        int cursor = 0;
+        std::array<bool, 128> on{};   // notes held while recording
     };
+
+    /// Loop playback sends each track's recorded notes on channel = track (0-based).
+    struct MidiEmit {
+        void *context = nullptr;
+        void (*fn)(void *, int frameOffset, int channel, int note, int velocity) = nullptr;
+    };
+    void setMidiEmit(MidiEmit m) { emit_ = m; }
+
+    /// A synth note played right now: recording tracks keep it with their audio.
+    void recordMidi(int note, int velocity) {
+        for (int t = 0; t < PS_LOOPER_TRACKS; ++t) {
+            Track &tr = tracks_[t];
+            if (tr.state != PS_LOOP_RECORD || tr.midiCount >= kMidiEvents) continue;
+            const int pos = t == first_ ? recorded_ : static_cast<int>(pos_);
+            if (note < 0) { // all off: close every held note
+                for (int n = 0; n < 128; ++n) if (tr.on[n] && tr.midiCount < kMidiEvents) {
+                    tr.midi[tr.midiCount++] = {pos, static_cast<uint8_t>(n), 0};
+                    tr.on[n] = false;
+                }
+                continue;
+            }
+            if (velocity == 0 && !tr.on[note]) continue;
+            tr.midi[tr.midiCount++] = {pos, static_cast<uint8_t>(note), static_cast<uint8_t>(std::clamp(velocity, 0, 127))};
+            tr.on[note] = velocity > 0;
+        }
+    }
 
     /// Hands a buffer back to the main thread (garbage queue).
     struct Release {
@@ -135,6 +168,11 @@ public:
                     t.buffer->channel[0][p] = srcL[i];
                     t.buffer->channel[1][p] = srcR[i];
                 } else if (t.state == PS_LOOP_PLAY && t.buffer) {
+                    while (t.cursor < t.midiCount && t.midi[t.cursor].pos <= p) {
+                        if (emit_.fn && t.smoothed > 0.01f)
+                            emit_.fn(emit_.context, i, static_cast<int>(&t - tracks_.data()), t.midi[t.cursor].note, t.midi[t.cursor].velocity);
+                        ++t.cursor;
+                    }
                     const float *l = t.buffer->channel[0].data(), *r = t.buffer->channel[1].data();
                     outL[i] += static_cast<float>((l[p] + (l[p1] - l[p]) * frac) * t.smoothed);
                     outR[i] += static_cast<float>((r[p] + (r[p1] - r[p]) * frac) * t.smoothed);
@@ -161,8 +199,15 @@ public:
 private:
     const Track *firstTrack() const { return first_ >= 0 ? &tracks_[first_] : nullptr; }
 
+    /// Closes notes still held when a take ends, so loop playback never leaves one hanging.
+    void closeNotes(Track &t, int pos) {
+        for (int n = 0; n < 128; ++n)
+            if (t.on[n] && t.midiCount < kMidiEvents) { t.midi[t.midiCount++] = {pos, static_cast<uint8_t>(n), 0}; t.on[n] = false; }
+    }
+
     void finishFirst() {
         Track &f = tracks_[first_];
+        closeNotes(f, std::max(0, recorded_ - 1));
         length_ = std::max(2, recorded_);
         f.state = PS_LOOP_PLAY;
         first_ = -1;
@@ -175,8 +220,9 @@ private:
     /// At the loop point: finished passes play, armed tracks start recording.
     void wrap() {
         for (auto &t : tracks_) {
+            t.cursor = 0;
             if (&t == firstTrack()) continue;
-            if (t.state == PS_LOOP_RECORD) t.state = PS_LOOP_PLAY;
+            if (t.state == PS_LOOP_RECORD) { closeNotes(t, std::max(0, length_ - 1)); t.state = PS_LOOP_PLAY; }
             else if (t.state == PS_LOOP_WAITING && t.buffer && t.buffer->frames >= length_) t.state = PS_LOOP_RECORD;
         }
     }
@@ -184,8 +230,14 @@ private:
     void drop(int track) {
         Track &t = tracks_[track];
         if (t.buffer) release_(t.buffer);
+        if (t.state == PS_LOOP_PLAY) // silence anything it was sending
+            for (int i = 0; i < t.midiCount; ++i)
+                if (t.midi[i].velocity > 0 && emit_.fn) emit_.fn(emit_.context, 0, track, t.midi[i].note, 0);
         t.buffer = nullptr;
         t.state = PS_LOOP_OFF;
+        t.midiCount = 0;
+        t.cursor = 0;
+        t.on.fill(false);
     }
 
     void resetIfEmpty() {
@@ -198,6 +250,7 @@ private:
 
     double sr_;
     Release release_;
+    MidiEmit emit_;
     std::array<Track, PS_LOOPER_TRACKS> tracks_{};
     int length_ = 0;
     double pos_ = 0, rate_ = 1;

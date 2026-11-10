@@ -18,7 +18,7 @@ let package = Package(
         // Synth panel brain: control events, gesture/menu state machine, session state.
         .target(name: "SynthCore", dependencies: ["ChordTheory"]),
         // Sampler panel brain: drum program model, pad/bank logic, project persistence.
-        .target(name: "SamplerCore"),
+        .target(name: "SamplerCore", dependencies: ["ChordTheory"]),
         // Real-time DSP core (C++ with a C API so Swift imports it without interop flags).
         .target(name: "SynthDSP"),
         // Offline audio work: onset/BPM detection, time-stretch, pitch-shift, processes.
@@ -26,7 +26,7 @@ let package = Package(
         // Swift side of the engine: command bridge + AVAudioEngine host.
         .target(name: "AudioEngine", dependencies: ["SynthDSP", "SynthCore", "SamplerCore"]),
         // SwiftUI panels and the multitouch play surface.
-        .target(name: "PocketUI", dependencies: ["SynthCore", "SamplerCore", "AudioEngine", "DSPKit", "SynthDSP"]),
+        .target(name: "PocketUI", dependencies: ["ChordTheory", "SynthCore", "SamplerCore", "AudioEngine", "DSPKit", "SynthDSP"]),
 
         .testTarget(name: "ChordTheoryTests", dependencies: ["ChordTheory"]),
         .testTarget(name: "SynthCoreTests", dependencies: ["SynthCore"]),

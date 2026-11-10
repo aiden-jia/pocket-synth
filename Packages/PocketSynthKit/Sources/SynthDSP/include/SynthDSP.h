@@ -44,6 +44,9 @@ typedef enum {
     PS_PARAM_METRONOME,       // 0 / 1: click while the transport plays (count-in always clicks)
     PS_PARAM_METRONOME_LEVEL, // 0...1
     PS_PARAM_BEATS_PER_BAR,   // 1...16, for the metronome accent (default 4)
+    PS_PARAM_MIDI_OUT,        // 0 / 1: send notes (live, drums, MIDI tracks, loops)
+    PS_PARAM_MIDI_CLOCK_OUT,  // 0 / 1: 24 PPQN clock + start/stop
+    PS_PARAM_MIDI_CHANNEL,    // 0...15: channel for live synth playing
     PS_PARAM_COUNT
 } PSParam;
 
@@ -105,6 +108,8 @@ typedef struct {
 
 #define PS_MAX_LAYERS 4
 #define PS_SAMPLER_PADS 128
+#define PS_SUBMIXES 8
+#define PS_RETURNS 4
 
 typedef struct {
     PSLayer layers[PS_MAX_LAYERS];
@@ -115,7 +120,15 @@ typedef struct {
     float attackMs, holdMs, decayMs, sustain, releaseMs;
     float level;           // linear pad gain
     float pan;             // -1...1
+    int output;            // 0 = sampler main, 1...8 = submix
+    float sends[PS_RETURNS]; // send levels to the returns
 } PSPadParams;
+
+// MARK: - Mixer routing (SAMPLER_SPEC §8)
+
+typedef enum { PS_INSERT_NONE = 0, PS_INSERT_LOWPASS, PS_INSERT_HIGHPASS, PS_INSERT_DRIVE, PS_INSERT_CRUSH } PSInsert;
+typedef enum { PS_RETURN_OFF = 0, PS_RETURN_ROOM, PS_RETURN_HALL, PS_RETURN_PLATE, PS_RETURN_DELAY_8, PS_RETURN_DELAY_4, PS_RETURN_CHORUS } PSReturnType;
+typedef enum { PS_XY_OFF = 0, PS_XY_FILTER, PS_XY_ECHO, PS_XY_CRUSH } PSXYType;
 
 // MARK: - Lifecycle
 
@@ -177,12 +190,22 @@ double ps_engine_beat(const PSEngine *engine);
 
 // MARK: - Sampler sequences
 
+/// What a sequence event (or a live note) plays.
+typedef enum {
+    PS_TARGET_DRUM = 0,    // a drum-program pad (`pad` = pad index)
+    PS_TARGET_KEYGROUP,    // a keygroup program (`pad` = MIDI note, `program` = keygroup)
+    PS_TARGET_SYNTH,       // the synth panel's sound (`pad` = MIDI note)
+    PS_TARGET_MIDI,        // MIDI out (`pad` = note, `program` = channel 0…15)
+} PSTarget;
+
 typedef struct {
     int tick;              // 0 ... lengthTicks-1
-    int length;            // ticks; releases note-on pads
-    int pad;               // 0 ... PS_SAMPLER_PADS-1
+    int length;            // ticks; releases gated sounds
+    int pad;               // pad index, or MIDI note for note targets
     int velocity;          // 1 ... 127
     float tune;            // semitones added to the pad's tune
+    int target;            // PSTarget
+    int program;           // keygroup index or MIDI channel
 } PSNoteEvent;
 
 typedef struct PSSequence PSSequence;
@@ -195,11 +218,19 @@ void ps_sequence_destroy(PSSequence *sequence);
 /// NULL clears it. The swap happens at the next block: playback never stops.
 void ps_engine_set_sequence(PSEngine *engine, PSSequence *sequence);
 
+/// Song mode / Next Sequence: `sequence` takes over at the end of the current one
+/// (`at_bar` 0) or at the next bar line (1), and the playhead restarts at its tick 0.
+/// A newer queue replaces an older one. Stopping the transport drops the queue.
+void ps_engine_queue_sequence(PSEngine *engine, PSSequence *sequence, int at_bar);
+/// Counts queued swaps (so the caller knows when one happened).
+int ps_transport_sequence_generation(const PSEngine *engine);
+
 typedef struct {
     int tick;              // transport position (unwrapped if not looping; may be < 0)
-    int pad;
-    int velocity;          // 0 = pad released
+    int pad;               // pad, or note for note targets
+    int velocity;          // 0 = released
     float tune;
+    int target;            // PSTarget it was played on
 } PSRecordedEvent;
 
 /// Moves up to `max` recorded events into `out`. Returns how many.
@@ -213,6 +244,25 @@ void ps_note_repeat_set(PSEngine *engine, double rate_beats, float swing);
 /// Pad down (velocity > 0), pressure change (same pad again) or up (velocity 0) while
 /// note repeat is on. Use instead of trigger/release.
 void ps_note_repeat_pad(PSEngine *engine, int pad, int velocity, float tune);
+
+// MARK: - Keygroup programs (SAMPLER_SPEC §3.2)
+
+#define PS_KEYGROUP_PROGRAMS 8
+#define PS_KEYGROUP_ZONES 32
+
+typedef struct {
+    int lowNote, highNote; // inclusive key range
+    int rootNote;          // the note that plays the sample at its own pitch
+    PSLayer layers[PS_MAX_LAYERS];
+    int layerCount;
+} PSKeygroupZone;
+
+/// `common` carries the envelope, level, pan and mono flag (layers are ignored).
+void ps_keygroup_set_program(PSEngine *engine, int program, int zone_count, const PSPadParams *common);
+void ps_keygroup_set_zone(PSEngine *engine, int program, int zone, const PSKeygroupZone *z);
+
+/// A live note on a target (velocity 0 = off). Recorded like pad hits while recording.
+void ps_live_note(PSEngine *engine, int target, int program, int note, int velocity);
 
 // MARK: - Synth performers (SYNTH_SPEC §4)
 
@@ -350,6 +400,37 @@ float ps_recorder_peak(const PSEngine *engine);
 
 /// Plays part of a sample once on a hidden preview pad (slice and chop auditions).
 void ps_sampler_preview(PSEngine *engine, PSSample *sample, int start, int end, int velocity);
+
+// MARK: - MIDI (SYNTH_SPEC §9)
+//
+// The engine stamps every outgoing MIDI event with a host time: the render call's host
+// time plus the event's offset in the buffer plus `latency_ticks` (so MIDI lines up with
+// what you hear). One consumer thread drains them. Without ps_engine_set_host_clock the
+// host time is simply the engine's frame counter.
+
+typedef struct {
+    unsigned long long hostTime;
+    unsigned char status, data1, data2;
+} PSMidiEvent;
+
+void ps_engine_set_host_clock(PSEngine *engine, double ticks_per_second, double latency_ticks);
+/// ps_engine_render with the host time of the buffer's first frame.
+void ps_engine_render_at(PSEngine *engine, float *left, float *right, int frames, unsigned long long host_time);
+int ps_engine_poll_midi_out(PSEngine *engine, PSMidiEvent *out, int max);
+
+/// Incoming MIDI (any one thread): notes play the synth (Drums/Beat modes: GM drums),
+/// CC 64 sustains, CC 120/123 silence everything. Clock and control CCs are handled
+/// by the caller.
+void ps_engine_midi_in(PSEngine *engine, int status, int data1, int data2);
+
+// MARK: - Mixer
+
+/// Submix 0…7: level, pan, mute, one insert (PSInsert) with an amount 0…1.
+void ps_mixer_set_submix(PSEngine *engine, int index, float level, float pan, int mute, int insert, float amount);
+/// Return 0…3: effect (PSReturnType) and level.
+void ps_mixer_set_return(PSEngine *engine, int index, int type, float level);
+/// XY effect on the master: type, x / y 0…1, active (touching or latched).
+void ps_mixer_set_xy(PSEngine *engine, int type, float x, float y, int active);
 
 // MARK: - Rendering & telemetry
 

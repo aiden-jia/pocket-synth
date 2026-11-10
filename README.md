@@ -9,7 +9,7 @@ Personal project. See [docs/DESIGN.md](docs/DESIGN.md) for the architecture, and
 
 ## Status
 
-Phases 0–4 (see DESIGN §10) are done.
+Phases 0–4 (see DESIGN §10) are done; phase 5 is built and tested, with simulator checks still partial.
 
 | Area | State |
 |---|---|
@@ -26,7 +26,7 @@ Phases 0–4 (see DESIGN §10) are done.
 | Sampling: resample master / synth / sampler, or the mic; threshold arm, pre-roll, meter, trim silence, auto-assign | done, tested; resampling checked in the simulator (mic not yet) |
 | Chop: hits (transient detection), regions, BPM grid (with tempo detection), manual markers; convert to pads, new samples, or pads + sequence | done, tested, checked in the simulator |
 | Processes: normalize, gain, fades, crop/delete/silence, reverse, trim silence, pitch shift, time stretch, bit crush, mono, remove DC — each an undoable new version | done, tested |
-| MIDI, keygroups, song mode, export | phase 5 |
+| Phase 5: MIDI in/out/clock (incl. looper MIDI), multi-track sequencer (drum / keygroup / synth / MIDI tracks), keygroups + auto-map, Pad Perform, List & Step editors, Song mode + Next Sequence, submixes / returns / XY FX, automation + Q-Links, export (WAV, stems, MIDI file) | built, unit-tested; only partly checked in the simulator |
 
 Synth sounds named after acoustic instruments are synthesized stand-ins for now.
 

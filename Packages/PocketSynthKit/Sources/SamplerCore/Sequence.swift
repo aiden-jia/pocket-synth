@@ -25,12 +25,52 @@ public struct NoteEvent: Hashable, Codable, Sendable, Identifiable {
     }
 }
 
+/// What a track plays (SAMPLER_SPEC §1, §3). Drum tracks address pads; the others
+/// address MIDI notes (a `NoteEvent.pad` is the note number there).
+public enum TrackProgram: Hashable, Codable, Sendable {
+    case drum
+    case keygroup(Int)          // index into SamplerProject.keygroups
+    case synth                  // the synth panel's current sound
+    case midi(channel: Int)     // 1…16, external gear
+
+    public var isNotes: Bool { self != .drum }
+
+    public var label: String {
+        switch self {
+        case .drum: "Drum"
+        case .keygroup(let i): "Keys \(i + 1)"
+        case .synth: "Synth"
+        case .midi(let ch): "MIDI \(ch)"
+        }
+    }
+}
+
 public struct Track: Hashable, Codable, Sendable {
+    public static let maxTracks = 128
+
     public var name: String
     public var events: [NoteEvent] = []
     public var mute = false
+    public var solo = false
+    public var program: TrackProgram = .drum
+    public var automation: [AutomationLane] = []
 
-    public init(name: String = "Track 1") { self.name = name }
+    public init(name: String = "Track 1", program: TrackProgram = .drum) {
+        self.name = name
+        self.program = program
+    }
+
+    enum CodingKeys: String, CodingKey { case name, events, mute, solo, program, automation }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        name = try c.decodeIfPresent(String.self, forKey: .name) ?? "Track"
+        events = try c.decodeIfPresent([NoteEvent].self, forKey: .events) ?? []
+        mute = try c.decodeIfPresent(Bool.self, forKey: .mute) ?? false
+        solo = try c.decodeIfPresent(Bool.self, forKey: .solo) ?? false
+        program = try c.decodeIfPresent(TrackProgram.self, forKey: .program) ?? .drum
+        automation = try c.decodeIfPresent([AutomationLane].self, forKey: .automation) ?? []
+    }
 }
 
 /// A sequence (named PadSequence to stay clear of Swift's `Sequence`).
@@ -163,12 +203,15 @@ public struct RecordedHit: Equatable, Sendable {
     public var pad: Int
     public var velocity: Int
     public var tune: Double
+    /// Played as a note (keygroup / synth / MIDI) rather than a drum pad.
+    public var isNote: Bool
 
-    public init(tick: Int, pad: Int, velocity: Int, tune: Double = 0) {
+    public init(tick: Int, pad: Int, velocity: Int, tune: Double = 0, isNote: Bool = false) {
         self.tick = tick
         self.pad = pad
         self.velocity = velocity
         self.tune = tune
+        self.isNote = isNote
     }
 }
 

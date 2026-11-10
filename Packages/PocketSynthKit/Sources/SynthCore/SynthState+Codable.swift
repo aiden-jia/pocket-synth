@@ -4,7 +4,7 @@ import Foundation
 /// for anything it doesn't have, instead of failing.
 extension SynthState {
     enum CodingKeys: String, CodingKey {
-        case key, scale, globalOctave, padOctave, padInversion, locks, stickMode, voiceCount, bassMode, voiceLeading, soundIndex, envelopePreset, attackOverrideMs, releaseOverrideMs, glide, stereo, fx, filterCutoffHz, mode, strumSpeed, arpPattern, arpLayer, arpRate, repeatRate, drumKit, beatStyle, beatVariation, seqRate, chordSequence, bpm, loopBars, metronome, metronomeLevel, midiIn, volume
+        case key, scale, globalOctave, padOctave, padInversion, locks, stickMode, voiceCount, bassMode, voiceLeading, soundIndex, envelopePreset, attackOverrideMs, releaseOverrideMs, glide, stereo, fx, filterCutoffHz, mode, strumSpeed, arpPattern, arpLayer, arpRate, repeatRate, drumKit, beatStyle, beatVariation, seqRate, chordSequence, bpm, loopBars, metronome, metronomeLevel, midiIn, midiOut, volume
     }
 
     public init(from decoder: Decoder) throws {
@@ -47,6 +47,7 @@ extension SynthState {
         get(.metronome, &metronome)
         get(.metronomeLevel, &metronomeLevel)
         get(.midiIn, &midiIn)
+        get(.midiOut, &midiOut)
         get(.volume, &volume)
         if !SoundCatalog.all.indices.contains(soundIndex) { soundIndex = 0 }
     }

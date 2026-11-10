@@ -86,8 +86,8 @@ public final class SampleLibrary {
         return (channels, m.sampleRate)
     }
 
-    /// Writes float32 WAV (1 or 2 channels).
-    public static func writeWAV(_ channels: [[Float]], sampleRate: Double, to url: URL) throws {
+    /// Writes a WAV (1 or 2 channels). `bitDepth` 16 or 24 = integer PCM, 32 = float.
+    public static func writeWAV(_ channels: [[Float]], sampleRate: Double, to url: URL, bitDepth: Int = 32) throws {
         let count = channels.first?.count ?? 0
         guard count > 0, let format = AVAudioFormat(standardFormatWithSampleRate: sampleRate,
                                                      channels: AVAudioChannelCount(min(2, channels.count))),
@@ -100,6 +100,8 @@ public final class SampleLibrary {
         var settings = format.settings
         settings[AVFormatIDKey] = kAudioFormatLinearPCM
         settings[AVLinearPCMIsNonInterleaved] = false // files are interleaved; the buffer isn't
+        settings[AVLinearPCMBitDepthKey] = bitDepth == 32 ? 32 : bitDepth
+        settings[AVLinearPCMIsFloatKey] = bitDepth == 32
         let file = try AVAudioFile(forWriting: url, settings: settings,
                                    commonFormat: .pcmFormatFloat32, interleaved: false)
         try file.write(from: buffer)

@@ -48,8 +48,8 @@ struct Grid {
 
 /// Events due at a sample-clock frame: note-offs, strummed note-ons, pad releases.
 struct Pending {
-    enum Kind : uint8_t { SynthOn, SynthOff, PadRelease, DrumOff } kind = SynthOff;
-    uint8_t slot = 0;       // strum: which chord slot scheduled it
+    enum Kind : uint8_t { SynthOn, SynthOff, PadRelease, DrumOff, KeygroupOff, MidiOff } kind = SynthOff;
+    uint8_t slot = 0;       // strum: which chord slot scheduled it; keygroup / MIDI channel
     bool bass = false;
     int16_t a = 0;          // note / pad
     float velocity = 0;

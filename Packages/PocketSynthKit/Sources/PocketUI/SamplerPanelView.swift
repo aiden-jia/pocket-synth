@@ -6,26 +6,31 @@ import UniformTypeIdentifiers
 struct SamplerPanelView: View {
     @Bindable var model: AppModel
     @State private var importing = false
+    @State private var showQLinks = false
 
     var body: some View {
         let s = model.sampler
         GeometryReader { geo in
             HStack(spacing: 12) {
-                SamplerSidebar(sampler: s, onImport: { importing = true })
+                SamplerSidebar(sampler: s, showQLinks: $showQLinks, onImport: { importing = true })
                     .frame(width: 76)
-                Group {
-                    switch s.view {
-                    case .main: SampleBrowserView(model: model, onImport: { importing = true })
-                    case .grid: GridEditorView(model: model, sampler: s)
-                    case .sample: SamplingView(model: model)
-                    case .edit: SampleEditView(model: model, sampler: s)
-                    case .program: PadEditView(model: model, sampler: s)
-                    case .mixer: MixerView(model: model, sampler: s)
+                VStack(spacing: 6) {
+                    Group {
+                        switch s.view {
+                        case .main: SampleBrowserView(model: model, onImport: { importing = true })
+                        case .grid: SeqView(model: model, sampler: s)
+                        case .sample: SamplingView(model: model)
+                        case .edit: SampleEditView(model: model, sampler: s)
+                        case .program: ProgramScreen(model: model, sampler: s)
+                        case .mixer: MixerScreen(model: model, sampler: s)
+                        case .song: SongView(model: model, sampler: s)
+                        }
                     }
+                    .frame(minWidth: 0, maxWidth: .infinity, maxHeight: .infinity)
+                    .background(RoundedRectangle(cornerRadius: 14).fill(Theme.panel))
+                    .clipped()
+                    if showQLinks { QLinkStrip(sampler: s).frame(height: 64) }
                 }
-                .frame(minWidth: 0, maxWidth: .infinity, maxHeight: .infinity)
-                .background(RoundedRectangle(cornerRadius: 14).fill(Theme.panel))
-                .clipped()
                 PadColumn(sampler: s, model: model)
                     .frame(width: min(geo.size.height - 60, geo.size.width * 0.38))
                     .layoutPriority(1)
@@ -48,12 +53,14 @@ struct SamplerPanelView: View {
 
 struct SamplerSidebar: View {
     @Bindable var sampler: SamplerController
+    @Binding var showQLinks: Bool
     let onImport: () -> Void
 
     private func icon(_ v: SamplerView) -> String {
         switch v {
         case .main: "square.grid.3x3"
         case .grid: "rectangle.split.3x3"
+        case .song: "list.number"
         case .sample: "mic"
         case .edit: "waveform"
         case .program: "slider.horizontal.3"
@@ -62,14 +69,14 @@ struct SamplerSidebar: View {
     }
 
     var body: some View {
-        VStack(spacing: 6) {
+        VStack(spacing: 4) {
             ForEach(SamplerView.allCases, id: \.self) { v in
                 Button { sampler.view = v } label: {
-                    VStack(spacing: 3) {
-                        Image(systemName: icon(v)).font(.system(size: 15))
-                        Text(v.label).font(.system(size: 10, weight: .semibold, design: .rounded))
+                    VStack(spacing: 1) {
+                        Image(systemName: icon(v)).font(.system(size: 13))
+                        Text(v.label).font(.system(size: 9, weight: .semibold, design: .rounded))
                     }
-                    .frame(maxWidth: .infinity, minHeight: 38)
+                    .frame(maxWidth: .infinity, minHeight: 33)
                     .foregroundStyle(sampler.view == v ? Theme.background : Theme.text)
                     .background(RoundedRectangle(cornerRadius: 10).fill(sampler.view == v ? Theme.accent : Theme.panel))
                 }
@@ -77,19 +84,27 @@ struct SamplerSidebar: View {
             }
             Spacer(minLength: 0)
             HStack(spacing: 4) {
+                Button { showQLinks.toggle() } label: {
+                    Image(systemName: "dial.medium")
+                        .font(.system(size: 13))
+                        .frame(maxWidth: .infinity, minHeight: 30)
+                        .foregroundStyle(showQLinks ? Theme.background : Theme.text)
+                        .background(RoundedRectangle(cornerRadius: 9).fill(showQLinks ? Theme.accent : Theme.raised))
+                }
+                .buttonStyle(.plain)
                 Button(action: onImport) {
                     Label("Import", systemImage: "square.and.arrow.down")
                         .labelStyle(.iconOnly)
-                        .font(.system(size: 15))
-                        .frame(maxWidth: .infinity, minHeight: 34)
+                        .font(.system(size: 13))
+                        .frame(maxWidth: .infinity, minHeight: 30)
                         .background(RoundedRectangle(cornerRadius: 9).fill(Theme.raised))
                 }
                 .buttonStyle(.plain)
                 Button { sampler.stopAll() } label: {
                     Label("Silence", systemImage: "speaker.slash.fill")
                         .labelStyle(.iconOnly)
-                        .font(.system(size: 13))
-                        .frame(maxWidth: .infinity, minHeight: 34)
+                        .font(.system(size: 12))
+                        .frame(maxWidth: .infinity, minHeight: 30)
                         .background(RoundedRectangle(cornerRadius: 9).fill(Theme.raised))
                 }
                 .buttonStyle(.plain)

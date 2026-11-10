@@ -70,6 +70,7 @@ public struct SynthState: Hashable, Codable, Sendable {
 
     // Settings
     public var midiIn = false
+    public var midiOut = true
     public var volume = 0.8
 
     public init() {}
@@ -105,11 +106,11 @@ public struct SynthState: Hashable, Codable, Sendable {
 /// Rows of the Sound → ↑ list: effects first, then settings (SYNTH_SPEC §3.1, §11).
 public enum SettingRow: Hashable, CaseIterable, Sendable {
     case fx(FXKind)
-    case voice, envelope, bass, glide, scale, voiceLeading, stereo, stickMode, loopLength, metronome, midiIn
+    case voice, envelope, bass, glide, scale, voiceLeading, stereo, stickMode, loopLength, metronome, midiIn, midiOut
 
     public static var allCases: [SettingRow] {
         FXKind.allCases.map { .fx($0) }
-            + [.voice, .envelope, .bass, .glide, .scale, .voiceLeading, .stereo, .stickMode, .loopLength, .metronome, .midiIn]
+            + [.voice, .envelope, .bass, .glide, .scale, .voiceLeading, .stereo, .stickMode, .loopLength, .metronome, .midiIn, .midiOut]
     }
 
     public var title: String {
@@ -126,6 +127,7 @@ public enum SettingRow: Hashable, CaseIterable, Sendable {
         case .loopLength: "LOOP"
         case .metronome: "METRONOME"
         case .midiIn: "MIDI IN"
+        case .midiOut: "MIDI OUT"
         }
     }
 
@@ -137,7 +139,7 @@ public enum SettingRow: Hashable, CaseIterable, Sendable {
         case .bass: BassMode.allCases.map(\.label)
         case .glide: Glide.allCases.map(\.label)
         case .scale: Scale.allCases.map(\.displayName)
-        case .voiceLeading, .stereo, .midiIn, .metronome: ["OFF", "ON"]
+        case .voiceLeading, .stereo, .midiIn, .midiOut, .metronome: ["OFF", "ON"]
         case .stickMode: StickMode.allCases.map(\.shortName)
         case .loopLength: ["FREE"] + (1...8).map { "\($0) BAR" + ($0 == 1 ? "" : "S") }
         }
@@ -157,6 +159,7 @@ public enum SettingRow: Hashable, CaseIterable, Sendable {
         case .loopLength: max(0, min(8, s.loopBars))
         case .metronome: s.metronome ? 1 : 0
         case .midiIn: s.midiIn ? 1 : 0
+        case .midiOut: s.midiOut ? 1 : 0
         }
     }
 
@@ -177,6 +180,7 @@ public enum SettingRow: Hashable, CaseIterable, Sendable {
         case .loopLength: s.loopBars = i
         case .metronome: s.metronome = i == 1
         case .midiIn: s.midiIn = i == 1
+        case .midiOut: s.midiOut = i == 1
         }
     }
 

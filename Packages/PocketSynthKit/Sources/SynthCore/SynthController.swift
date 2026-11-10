@@ -107,6 +107,28 @@ public final class SynthController {
 
     public func setMetronome(_ on: Bool) { mutate { $0.metronome = on } }
 
+    /// A gated MIDI control CC (see MIDIControlMap).
+    public func apply(_ action: MIDIControlMap.Action) {
+        mutate { s in
+            switch action {
+            case .tempo(let bpm): s.bpm = bpm
+            case .key(let k): s.key = Key(k)
+            case .octave(let o): s.globalOctave = o
+            case .cutoff(let hz):
+                s.filterCutoffHz = hz
+                s.fx[.filter] = 1
+            case .reverb(let r): s.fx[.reverb] = r == 0 ? nil : r
+            }
+        }
+    }
+
+    /// Live MIDI channel (0-based) for synth playing (SYNTH_SPEC §9): the recording
+    /// track's channel, else the next empty track's, else 7 when all six are full.
+    public var liveMIDIChannel: Int {
+        if let r = looper.tracks.firstIndex(where: { $0.state == .record || $0.state == .waiting }) { return r }
+        return looper.tracks.firstIndex { $0.state == .off } ?? 6
+    }
+
     /// Call periodically (e.g. 4×/s) to expire toasts and idle menus.
     public func tick(at time: Double) {
         now = time

@@ -78,6 +78,14 @@ public struct PadEnvelope: Hashable, Codable, Sendable {
     public var releaseMs = 30.0
 
     public init() {}
+
+    public init(attackMs: Double, holdMs: Double, decayMs: Double, sustain: Double, releaseMs: Double) {
+        self.attackMs = attackMs
+        self.holdMs = holdMs
+        self.decayMs = decayMs
+        self.sustain = sustain
+        self.releaseMs = releaseMs
+    }
 }
 
 public struct Pad: Hashable, Codable, Sendable {
@@ -91,8 +99,27 @@ public struct Pad: Hashable, Codable, Sendable {
     public var envelope = PadEnvelope()
     public var level = 1.0
     public var pan = 0.0
+    /// 0 = sampler main, 1…8 = submix (SAMPLER_SPEC §8).
+    public var output = 0
+    /// Send levels to returns 1…4.
+    public var sends: [Double] = [0, 0, 0, 0]
 
     public init() {}
+
+    enum CodingKeys: String, CodingKey { case layers, trigger, mono, muteGroup, envelope, level, pan, output, sends }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        layers = try c.decodeIfPresent([PadLayer].self, forKey: .layers) ?? [PadLayer()]
+        trigger = try c.decodeIfPresent(TriggerMode.self, forKey: .trigger) ?? .oneShot
+        mono = try c.decodeIfPresent(Bool.self, forKey: .mono) ?? false
+        muteGroup = try c.decodeIfPresent(Int.self, forKey: .muteGroup) ?? 0
+        envelope = try c.decodeIfPresent(PadEnvelope.self, forKey: .envelope) ?? PadEnvelope()
+        level = try c.decodeIfPresent(Double.self, forKey: .level) ?? 1
+        pan = try c.decodeIfPresent(Double.self, forKey: .pan) ?? 0
+        output = try c.decodeIfPresent(Int.self, forKey: .output) ?? 0
+        sends = try c.decodeIfPresent([Double].self, forKey: .sends) ?? [0, 0, 0, 0]
+    }
 
     public var isEmpty: Bool { layers.allSatisfy { $0.sampleID == nil } }
 
@@ -135,12 +162,80 @@ public enum PadAddress {
     public static func gridIndex(row: Int, column: Int) -> Int { (3 - row) * 4 + column }
 }
 
+public enum InsertType: Int, CaseIterable, Codable, Sendable {
+    case none, lowpass, highpass, drive, crush
+    public var label: String { ["None", "Low-pass", "High-pass", "Drive", "Crush"][rawValue] }
+}
+
+public enum ReturnType: Int, CaseIterable, Codable, Sendable {
+    case off, room, hall, plate, delay8, delay4, chorus
+    public var label: String { ["Off", "Room", "Hall", "Plate", "Delay 1/8", "Delay 1/4", "Chorus"][rawValue] }
+}
+
+public enum XYType: Int, CaseIterable, Codable, Sendable {
+    case off, filter, echo, crush
+    public var label: String { ["Off", "Filter", "Echo", "Crush"][rawValue] }
+    /// What x and y do, for the pad's labels.
+    public var axes: (x: String, y: String) {
+        switch self {
+        case .off: ("", "")
+        case .filter: ("LP ← cutoff → HP", "resonance")
+        case .echo: ("time", "feedback")
+        case .crush: ("bits", "rate")
+        }
+    }
+}
+
+public struct Submix: Hashable, Codable, Sendable {
+    public var level = 1.0
+    public var pan = 0.0
+    public var mute = false
+    public var insert: InsertType = .none
+    public var amount = 0.5
+    public init() {}
+}
+
+public struct ReturnBus: Hashable, Codable, Sendable {
+    public var type: ReturnType = .off
+    public var level = 1.0
+    public init(type: ReturnType = .off) { self.type = type }
+}
+
+/// XY performance FX (SAMPLER_SPEC §8): latched or held.
+public struct XYSettings: Hashable, Codable, Sendable {
+    public var type: XYType = .filter
+    public var x = 0.5
+    public var y = 0.3
+    public var active = false
+    public init() {}
+}
+
 public struct SamplerMixer: Hashable, Codable, Sendable {
+    public static let submixCount = 8
+    public static let returnCount = 4
+
     public var synthLevel = 1.0
     public var samplerLevel = 1.0
     public var masterLevel = 1.0
+    public var submixes = Array(repeating: Submix(), count: SamplerMixer.submixCount)
+    /// Returns start as room, hall, 1/8 delay and chorus (each still at send 0).
+    public var returns = [ReturnBus(type: .room), ReturnBus(type: .hall), ReturnBus(type: .delay8), ReturnBus(type: .chorus)]
+    public var xy = XYSettings()
 
     public init() {}
+
+    enum CodingKeys: String, CodingKey { case synthLevel, samplerLevel, masterLevel, submixes, returns, xy }
+
+    public init(from decoder: Decoder) throws {
+        self.init()
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        synthLevel = try c.decodeIfPresent(Double.self, forKey: .synthLevel) ?? 1
+        samplerLevel = try c.decodeIfPresent(Double.self, forKey: .samplerLevel) ?? 1
+        masterLevel = try c.decodeIfPresent(Double.self, forKey: .masterLevel) ?? 1
+        if let s = try c.decodeIfPresent([Submix].self, forKey: .submixes), s.count == Self.submixCount { submixes = s }
+        if let r = try c.decodeIfPresent([ReturnBus].self, forKey: .returns), r.count == Self.returnCount { returns = r }
+        xy = try c.decodeIfPresent(XYSettings.self, forKey: .xy) ?? XYSettings()
+    }
 }
 
 public struct SamplerProject: Hashable, Codable, Sendable {
@@ -155,11 +250,13 @@ public struct SamplerProject: Hashable, Codable, Sendable {
     public var sequences: [PadSequence] = [PadSequence(name: "Sequence 01")]
     public var currentSequence = 0
     public var timingCorrect = TimingCorrect()
+    public var keygroups: [KeygroupProgram] = []
+    public var song = Song()
 
     public init() {}
 
     enum CodingKeys: String, CodingKey {
-        case schemaVersion, samples, program, mixer, sequences, currentSequence, timingCorrect
+        case schemaVersion, samples, program, mixer, sequences, currentSequence, timingCorrect, keygroups, song
     }
 
     public init(from decoder: Decoder) throws {
@@ -172,6 +269,8 @@ public struct SamplerProject: Hashable, Codable, Sendable {
         currentSequence = min(max(0, try c.decodeIfPresent(Int.self, forKey: .currentSequence) ?? 0),
                               sequences.count - 1)
         timingCorrect = try c.decodeIfPresent(TimingCorrect.self, forKey: .timingCorrect) ?? TimingCorrect()
+        keygroups = try c.decodeIfPresent([KeygroupProgram].self, forKey: .keygroups) ?? []
+        song = try c.decodeIfPresent(Song.self, forKey: .song) ?? Song()
         schemaVersion = Self.currentSchema
     }
 

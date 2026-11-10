@@ -1,3 +1,4 @@
+import ChordTheory
 import SamplerCore
 import SwiftUI
 
@@ -35,8 +36,11 @@ struct PadGridView: View {
                 ForEach(0..<16, id: \.self) { g in
                     let pad = PadAddress.pad(bank: s.bank, gridIndex: g)
                     let p = s.project.program.pads[pad]
-                    SamplerPadView(name: PadAddress.name(pad),
-                                   sampleName: levelLabel(s, g) ?? s.project.sample(p.primarySample)?.name,
+                    let notes = s.track.program.isNotes
+                    let stepping = s.view == .grid && s.seqEditor == .step
+                    SamplerPadView(name: stepping ? "STEP \(g + 1)" : notes ? PitchName.noteName(s.perform.note(g)) : PadAddress.name(pad),
+                                   sampleName: stepping ? (s.stepIsOn(g) ? "●" : nil)
+                                       : notes ? s.track.program.label : levelLabel(s, g) ?? s.project.sample(p.primarySample)?.name,
                                    held: s.heldPads.contains(pad),
                                    selected: s.selectedPad == pad,
                                    velocity: s.lastVelocity[pad])
@@ -117,6 +121,9 @@ struct PadColumn: View {
             }
             HStack(spacing: 4) {
                 KeyButton(label: "FULL LVL", on: sampler.fullLevel, tint: Theme.warm) { sampler.fullLevel.toggle() }
+                if sampler.track.program.isNotes {
+                    PerformMenu(sampler: sampler)
+                } else {
                 Menu {
                     Picker("16 Levels", selection: Binding(get: { sampler.sixteenLevels }, set: { sampler.setSixteenLevels($0) })) {
                         Text("Off").tag(LevelsParameter?.none)
@@ -128,6 +135,7 @@ struct PadColumn: View {
                 } label: {
                     KeyLabel(label: sampler.sixteenLevels.map { "16 \($0 == .velocity ? "VEL" : "TUNE")" } ?? "16 LVL",
                              on: sampler.sixteenLevels != nil, tint: Theme.warm)
+                }
                 }
                 HoldKey(label: "ERASE", on: sampler.eraseHeld, tint: .red) { sampler.eraseHeld = $0 }
                 KeyButton(icon: "arrow.uturn.backward", on: false, tint: Theme.text, enabled: sampler.history.canUndo) { sampler.undo() }
@@ -144,6 +152,34 @@ struct PadColumn: View {
                 }
                 .frame(width: 58)
             }
+        }
+    }
+}
+
+/// Pad Perform settings for note tracks (SAMPLER_SPEC §2).
+struct PerformMenu: View {
+    @Bindable var sampler: SamplerController
+
+    var body: some View {
+        let p = sampler.perform
+        Menu {
+            Picker("Layout", selection: $sampler.perform.mode) {
+                ForEach(PadPerform.Mode.allCases, id: \.self) { Text($0.label).tag($0) }
+            }
+            Picker("Root", selection: $sampler.perform.root) {
+                ForEach(0..<12, id: \.self) { Text(PitchName.name($0)).tag($0) }
+            }
+            if p.mode == .scale {
+                Picker("Scale", selection: $sampler.perform.scale) {
+                    ForEach(Scale.allCases, id: \.self) { Text($0.displayName).tag($0) }
+                }
+            }
+            Picker("Octave", selection: $sampler.perform.octave) {
+                ForEach(0...7, id: \.self) { Text("Pad 1 = \(PitchName.name(p.root))\($0)").tag($0) }
+            }
+        } label: {
+            KeyLabel(label: p.mode == .chromatic ? "CHROM \(PitchName.name(p.root))\(p.octave)" : "SCALE \(PitchName.name(p.root))",
+                     on: true, tint: Theme.accent)
         }
     }
 }

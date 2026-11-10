@@ -19,6 +19,15 @@ public enum SamplerCommand: Equatable, Sendable {
     case noteRepeat(beats: Double, swing: Double)
     /// Note repeat pad down / pressure (velocity > 0) or up (0).
     case repeatPad(pad: Int, velocity: Int, tune: Double)
+    /// A keygroup program changed (the bridge resolves its samples).
+    case keygroup(Int, KeygroupProgram)
+    /// A live note on a note track's program (velocity 0 = off).
+    case liveNote(TrackProgram, note: Int, velocity: Int)
+    /// Plays `sequence` after the current one ends (or at the next bar). `loop` overrides
+    /// the sequence's own loop flag (the last step of a song plays once).
+    case queueSequence(PadSequence, atBar: Bool, loop: Bool?)
+    /// XY performance FX only (sent at touch rate).
+    case xy(XYSettings)
 }
 
 /// How a touch on a pad becomes a velocity (SAMPLER_SPEC §2).
@@ -45,18 +54,25 @@ public enum VelocityMode: String, CaseIterable, Codable, Sendable {
 }
 
 public enum SamplerView: String, CaseIterable, Sendable {
-    case main, grid, sample, edit, program, mixer
+    case main, grid, sample, edit, program, mixer, song
 
     public var label: String {
         switch self {
         case .main: "Main"
-        case .grid: "Grid"
+        case .grid: "Seq"
         case .sample: "Sample"
         case .edit: "Edit"
-        case .program: "Pad"
+        case .program: "Program"
         case .mixer: "Mixer"
+        case .song: "Song"
         }
     }
+}
+
+/// The sequence editors (SAMPLER_SPEC §6).
+public enum SeqEditor: String, CaseIterable, Sendable {
+    case grid, list, step
+    public var label: String { ["Grid", "List", "Step"][Self.allCases.firstIndex(of: self)!] }
 }
 
 /// Sample Edit's two modes (SAMPLER_SPEC §5).
@@ -74,12 +90,15 @@ public enum ChopConversion: String, CaseIterable, Sendable {
     case samples
     /// Slices on pads plus a sequence that replays them in their original timing.
     case sequence
+    /// A keygroup that plays the whole phrase across the keyboard (root C3), on a new track.
+    case phrase
 
     public var label: String {
         switch self {
         case .pads: "Slices → pads"
         case .samples: "Extract new samples"
         case .sequence: "Pads + sequence"
+        case .phrase: "Patched phrase (keygroup)"
         }
     }
 }
@@ -129,6 +148,14 @@ public final class SamplerController {
     public var velocityMode: VelocityMode = .position
     public var fullLevel = false
     public var editMode: EditMode = .trim
+    /// Track being edited and recorded (UI state).
+    public var selectedTrack = 0
+    /// How the pads play notes on keygroup / synth / MIDI tracks.
+    public var perform = PadPerform()
+    public var seqEditor: SeqEditor = .grid
+    /// Step editor: the bar shown, and the note stepped on note tracks.
+    public var stepPage = 0
+    public var stepNote = 60
     /// Pads currently held (program indices), for lighting.
     public private(set) var heldPads: Set<Int> = []
     public private(set) var lastVelocity: [Int: Int] = [:]
@@ -146,6 +173,18 @@ public final class SamplerController {
     // Sequencer
     public private(set) var transport = TransportState()
     public var recordMode: RecordMode = .overdub
+    /// While playing, picking another sequence waits for this one to end (or the bar).
+    public var nextSequenceMode = false
+    public var nextSequenceAtBar = false
+    /// Global automation read / write (SAMPLER_SPEC §6).
+    public var automationMode: AutomationMode = .read
+    public var qlinkPage: QLinkPage = .pad
+    /// Project page assignments.
+    public var projectQLinks: [AutoParam?] = [.samplerLevel, .synthLevel, .xyX, .xyY]
+    /// The sequence that takes over next (Next Sequence or the song).
+    public private(set) var queuedSequence: Int?
+    /// Song playback: index into the song's playlist, nil when not playing the song.
+    public private(set) var songIndex: Int?
     public private(set) var history = UndoHistory<SamplerProject>()
 
     @ObservationIgnored public var send: (SamplerCommand) -> Void
@@ -155,9 +194,14 @@ public final class SamplerController {
     @ObservationIgnored public var now: () -> Double = { ProcessInfo.processInfo.systemUptime }
 
     @ObservationIgnored private var heldGrid: [Int: (pad: Int, tune: Double)] = [:]
+    @ObservationIgnored private var heldNotes: [Int: (note: Int, program: TrackProgram)] = [:]
     @ObservationIgnored private var erasePads: Set<Int> = []
     @ObservationIgnored private var eraseCheckpointed = false
     @ObservationIgnored private var take: TakeRecorder?
+    @ObservationIgnored private var takeTrack = 0
+    @ObservationIgnored private var sequenceGeneration: Int?
+    /// Parameters being touched (written), with the last tick written.
+    @ObservationIgnored private var touching: [AutoParam: Int?] = [:]
     @ObservationIgnored private var takeBefore: SamplerProject?
 
     public init(project: SamplerProject = SamplerProject(),
@@ -170,6 +214,7 @@ public final class SamplerController {
     public func start() {
         for (i, pad) in project.program.pads.enumerated() where !pad.isEmpty { send(.pad(i, pad)) }
         send(.mixer(project.mixer))
+        for (i, k) in project.keygroups.enumerated() { send(.keygroup(i, k)) }
         send(.beatsPerBar(project.sequence.beatsPerBar))
         send(.sequence(project.sequence))
     }
@@ -184,6 +229,22 @@ public final class SamplerController {
     public func padDown(gridIndex: Int, y: Double = 0.3, size: Double = 0.5) {
         let gridPad = PadAddress.pad(bank: bank, gridIndex: gridIndex)
         var velocity = fullLevel ? 127 : velocityMode.velocity(y: y, size: size)
+        if view == .grid, seqEditor == .step {
+            // Step editor: the 16 pads are the 16 steps of the selected lane.
+            heldPads.insert(gridPad)
+            toggleStepCell(gridIndex)
+            return
+        }
+        if track.program.isNotes {
+            // Pad Perform: this pad is a note on the track's program.
+            let note = perform.note(gridIndex)
+            stepNote = note
+            heldPads.insert(gridPad)
+            heldNotes[gridIndex] = (note, track.program)
+            lastVelocity[gridPad] = velocity
+            send(.liveNote(track.program, note: note, velocity: velocity))
+            return
+        }
         var pad = gridPad
         var tune = 0.0
         if let levels = sixteenLevels {
@@ -222,6 +283,10 @@ public final class SamplerController {
     public func padUp(gridIndex: Int) {
         let gridPad = PadAddress.pad(bank: bank, gridIndex: gridIndex)
         heldPads.remove(gridPad)
+        if let n = heldNotes.removeValue(forKey: gridIndex) {
+            send(.liveNote(n.program, note: n.note, velocity: 0))
+            return
+        }
         guard let h = heldGrid.removeValue(forKey: gridIndex) else { return }
         if erasePads.remove(h.pad) != nil { return }
         if noteRepeat {
@@ -271,6 +336,8 @@ public final class SamplerController {
 
     public func stop() {
         if transport.recording != nil { endTake() }
+        songIndex = nil
+        queuedSequence = nil
         transport.playing = false
         transport.position = 0
         send(.transport(playing: false, startTick: 0, countInBeats: 0))
@@ -301,6 +368,7 @@ public final class SamplerController {
 
     private func beginTake() {
         takeBefore = project
+        takeTrack = trackIndex
         take = TakeRecorder()
         transport.recording = recordMode
         let tc = project.timingCorrect
@@ -308,9 +376,10 @@ public final class SamplerController {
     }
 
     private func endTake() {
-        guard var t = take else { return }
+        guard var tk = take else { return }
         var seq = project.sequence
-        t.finish(at: max(0, Int(transport.position)), in: &seq, track: 0)
+        let t = min(takeTrack, seq.tracks.count - 1)
+        tk.finish(at: max(0, Int(transport.position)), in: &seq, track: t)
         project.sequence = seq
         if let before = takeBefore, before != project {
             history.record(before, label: "Record", at: now())
@@ -325,28 +394,36 @@ public final class SamplerController {
 
     /// Feed engine telemetry here (~30×/s): recorded hits, the playhead, and whether the
     /// engine is still playing (a non-looping sequence stops at its end).
-    public func poll(hits: [RecordedHit], position: Double, enginePlaying: Bool) {
+    public func poll(hits: [RecordedHit], position: Double, enginePlaying: Bool, sequenceGeneration gen: Int? = nil) {
+        if let gen {
+            if let last = sequenceGeneration, gen != last { sequenceSwapped() }
+            sequenceGeneration = gen
+        }
         let previous = transport.position
         if transport.playing { transport.position = position }
         var seq = project.sequence
         var changed = false
+        let t = min(take != nil ? takeTrack : trackIndex, seq.tracks.count - 1)
 
-        if var t = take, !hits.isEmpty {
+        // Only hits that match the track: pad hits on drum tracks, notes on note tracks.
+        let wantNotes = seq.tracks[t].program.isNotes
+        let mine = hits.filter { $0.isNote == wantNotes }
+        if var tk = take, !mine.isEmpty {
             let tc = project.timingCorrect
-            t.ingest(hits, into: &seq, track: 0, timing: tc.onInput ? tc : nil)
-            take = t
+            tk.ingest(mine, into: &seq, track: t, timing: tc.onInput ? tc : nil)
+            take = tk
             changed = true
         }
         if transport.playing, previous >= 0, position >= 0, Int(previous) != Int(position) {
             let from = Int(previous), to = Int(position)
-            if transport.recording == .replace, let t = take {
+            if transport.recording == .replace, let tk = take {
                 let before = seq
-                seq.erase(track: 0, from: from, to: to, keep: t.recordedIDs)
+                seq.erase(track: t, from: from, to: to, keep: tk.recordedIDs)
                 changed = changed || before != seq
             }
             if eraseHeld, !erasePads.isEmpty {
                 let before = seq
-                seq.erase(track: 0, from: from, to: to, pads: erasePads, keep: take?.recordedIDs ?? [])
+                seq.erase(track: t, from: from, to: to, pads: erasePads, keep: take?.recordedIDs ?? [])
                 if before != seq {
                     if !eraseCheckpointed, take == nil {
                         history.record(project, label: "Erase", at: now())
@@ -361,7 +438,8 @@ public final class SamplerController {
             send(.sequence(seq))
             onChange(project)
         }
-        if transport.playing, !enginePlaying, previous > 0, !project.sequence.loop { stop() }
+        if transport.playing, position >= 0, automationMode != .off { playAutomation(at: position) }
+        if transport.playing, !enginePlaying, previous > 0 { stop() } // a one-shot sequence or song ended
     }
 
     // MARK: - Sequence editing
@@ -381,49 +459,57 @@ public final class SamplerController {
 
     /// Grid tap: removes the pad's note starting in [tick, tick + span), or adds one.
     public func toggleStep(pad: Int, tick: Int, span: Int, velocity: Int = 100) {
+        let t = trackIndex
         editSequence("Edit notes") { seq in
-            if let i = seq.tracks[0].events.firstIndex(where: { $0.pad == pad && $0.tick >= tick && $0.tick < tick + span }) {
-                seq.tracks[0].events.remove(at: i)
+            if let i = seq.tracks[t].events.firstIndex(where: { $0.pad == pad && $0.tick >= tick && $0.tick < tick + span }) {
+                seq.tracks[t].events.remove(at: i)
             } else {
-                seq.add(tick: tick, length: span, pad: pad, velocity: velocity)
+                seq.add(track: t, tick: tick, length: span, pad: pad, velocity: velocity)
             }
         }
     }
 
     public func moveEvent(_ id: UInt32, toTick tick: Int, pad: Int? = nil) {
+        let t = trackIndex
         editSequence("Move note", key: "move-\(id)") { seq in
-            guard let i = seq.tracks[0].events.firstIndex(where: { $0.id == id }) else { return }
+            guard let i = seq.tracks[t].events.firstIndex(where: { $0.id == id }) else { return }
             let len = seq.lengthTicks
-            seq.tracks[0].events[i].tick = ((tick % len) + len) % len
-            if let pad { seq.tracks[0].events[i].pad = pad }
-            seq.sortEvents(track: 0)
+            seq.tracks[t].events[i].tick = ((tick % len) + len) % len
+            if let pad { seq.tracks[t].events[i].pad = pad }
+            seq.sortEvents(track: t)
         }
     }
 
     public func setVelocity(_ id: UInt32, _ v: Int) {
+        let t = trackIndex
         editSequence("Velocity", key: "velocity-\(id)") { seq in
-            guard let i = seq.tracks[0].events.firstIndex(where: { $0.id == id }) else { return }
-            seq.tracks[0].events[i].velocity = max(1, min(127, v))
+            guard let i = seq.tracks[t].events.firstIndex(where: { $0.id == id }) else { return }
+            seq.tracks[t].events[i].velocity = max(1, min(127, v))
         }
     }
 
     public func deleteEvent(_ id: UInt32) {
-        editSequence("Delete note") { $0.tracks[0].events.removeAll { $0.id == id } }
+        let t = trackIndex
+        editSequence("Delete note") { $0.tracks[t].events.removeAll { $0.id == id } }
     }
 
     /// Applies Timing Correct to every note of the track.
     public func quantizeTrack() {
+        let t = trackIndex
         let tc = project.timingCorrect
         editSequence("Quantize") { seq in
             let len = seq.lengthTicks
-            for i in seq.tracks[0].events.indices {
-                seq.tracks[0].events[i].tick = ((tc.apply(seq.tracks[0].events[i].tick) % len) + len) % len
+            for i in seq.tracks[t].events.indices {
+                seq.tracks[t].events[i].tick = ((tc.apply(seq.tracks[t].events[i].tick) % len) + len) % len
             }
-            seq.sortEvents(track: 0)
+            seq.sortEvents(track: t)
         }
     }
 
-    public func clearTrack() { editSequence("Clear track") { $0.tracks[0].events.removeAll() } }
+    public func clearTrack() {
+        let t = trackIndex
+        editSequence("Clear track") { $0.tracks[t].events.removeAll() }
+    }
 
     public func setBars(_ n: Int) { editSequence("Length") { $0.setBars(n) } }
 
@@ -431,11 +517,290 @@ public final class SamplerController {
 
     public func setLoop(_ on: Bool) { editSequence("Loop") { $0.loop = on } }
 
-    public func setTrackMute(_ on: Bool) { editSequence("Mute") { $0.tracks[0].mute = on } }
+    public func setTrackMute(_ on: Bool) {
+        let t = trackIndex
+        editSequence("Mute") { $0.tracks[t].mute = on }
+    }
+
+    // MARK: - Tracks (SAMPLER_SPEC §6)
+
+    public var trackIndex: Int { max(0, min(selectedTrack, project.sequence.tracks.count - 1)) }
+    public var track: Track { project.sequence.tracks[trackIndex] }
+
+    public func selectTrack(_ i: Int) {
+        guard project.sequence.tracks.indices.contains(i) else { return }
+        selectedTrack = i
+    }
+
+    /// Adds a track (to every sequence, so track numbers line up) and selects it.
+    public func addTrack(_ program: TrackProgram) {
+        guard project.sequence.tracks.count < Track.maxTracks else { return }
+        checkpoint("New track")
+        let n = project.sequence.tracks.count + 1
+        for i in project.sequences.indices where project.sequences[i].tracks.count < n {
+            project.sequences[i].tracks.append(Track(name: "Track \(n)", program: program))
+        }
+        selectedTrack = n - 1
+        send(.sequence(project.sequence))
+        onChange(project)
+    }
+
+    public func deleteTrack(_ i: Int) {
+        guard project.sequence.tracks.count > 1, project.sequence.tracks.indices.contains(i) else { return }
+        editSequence("Delete track") { $0.tracks.remove(at: i) }
+        selectedTrack = min(selectedTrack, project.sequence.tracks.count - 1)
+    }
+
+    public func setTrackProgram(_ i: Int, _ program: TrackProgram) {
+        editSequence("Track program") { $0.tracks[i].program = program }
+    }
+
+    public func setTrackSolo(_ i: Int, _ on: Bool) {
+        editSequence("Solo") { $0.tracks[i].solo = on }
+    }
+
+    // MARK: - Keygroups (SAMPLER_SPEC §3.2)
+
+    /// Adds a keygroup program and returns its index (nil when all 8 are used).
+    @discardableResult
+    public func addKeygroup(_ program: KeygroupProgram) -> Int? {
+        guard project.keygroups.count < KeygroupProgram.maxPrograms else { return nil }
+        checkpoint("New keygroup")
+        project.keygroups.append(program)
+        let i = project.keygroups.count - 1
+        send(.keygroup(i, program))
+        onChange(project)
+        return i
+    }
+
+    public func updateKeygroup(_ i: Int, key: String? = nil, _ body: (inout KeygroupProgram) -> Void) {
+        guard project.keygroups.indices.contains(i) else { return }
+        var k = project.keygroups[i]
+        body(&k)
+        k.zones = Array(k.zones.prefix(KeygroupProgram.maxZones))
+        guard k != project.keygroups[i] else { return }
+        checkpoint("Edit keygroup", key: key ?? "keygroup-\(i)")
+        project.keygroups[i] = k
+        send(.keygroup(i, k))
+        onChange(project)
+    }
+
+    // MARK: - Step editor
+
+    /// Ticks per step (the Timing Correct value) and steps per page.
+    public var stepTicks: Int { project.timingCorrect.value.ticks }
+    public static let stepsPerPage = 16
+
+    /// The pad (drum tracks) or note (note tracks) the step editor writes.
+    public var stepLane: Int { track.program.isNotes ? stepNote : selectedPad }
+
+    public var stepPages: Int {
+        max(1, Int((Double(project.sequence.lengthTicks) / Double(stepTicks * Self.stepsPerPage)).rounded(.up)))
+    }
+
+    public func stepIsOn(_ step: Int) -> Bool {
+        let tick = (min(stepPage, stepPages - 1) * Self.stepsPerPage + step) * stepTicks
+        return track.events.contains { $0.pad == stepLane && $0.tick >= tick && $0.tick < tick + stepTicks }
+    }
+
+    public func toggleStepCell(_ step: Int) {
+        let tick = (min(stepPage, stepPages - 1) * Self.stepsPerPage + step) * stepTicks
+        guard tick < project.sequence.lengthTicks else { return }
+        toggleStep(pad: stepLane, tick: tick, span: stepTicks)
+    }
+
+    /// Nudges an event by `steps` Timing Correct steps.
+    public func nudgeEvent(_ id: UInt32, steps: Int) {
+        guard let e = track.events.first(where: { $0.id == id }) else { return }
+        moveEvent(id, toTick: e.tick + steps * stepTicks)
+    }
+
+    /// What lane / pad `g` of the grid means on the selected track: a pad index on drum
+    /// tracks, a MIDI note (from Pad Perform) on note tracks.
+    public func laneValue(_ g: Int) -> Int {
+        track.program.isNotes ? perform.note(g) : PadAddress.pad(bank: bank, gridIndex: g)
+    }
+
+    // MARK: - Parameters, automation and Q-Links
+
+    public func value(of p: AutoParam) -> Double {
+        let m = project.mixer
+        switch p {
+        case .samplerLevel: return m.samplerLevel
+        case .synthLevel: return m.synthLevel
+        case .masterLevel: return m.masterLevel
+        case .padLevel(let i): return project.program.pads[i].level
+        case .padPan(let i): return project.program.pads[i].pan
+        case .padTune(let i): return project.program.pads[i].layers.first?.tune ?? 0
+        case .submixLevel(let i): return m.submixes[i].level
+        case .returnLevel(let i): return m.returns[i].level
+        case .xyX: return m.xy.x
+        case .xyY: return m.xy.y
+        }
+    }
+
+    /// The four knobs of the current Q-Link page.
+    public var qlinks: [AutoParam?] {
+        switch qlinkPage {
+        case .pad: [.padLevel(selectedPad), .padPan(selectedPad), .padTune(selectedPad), .submixLevel(max(0, selected.output - 1))]
+        case .mixer: [.samplerLevel, .synthLevel, .masterLevel, .xyX]
+        case .returns: (0..<4).map { .returnLevel($0) }
+        case .project: projectQLinks
+        }
+    }
+
+    /// Writes a parameter without an undo step or a save (automation playback).
+    private func apply(_ p: AutoParam, _ v: Double) {
+        let v = min(p.range.upperBound, max(p.range.lowerBound, v))
+        switch p {
+        case .padLevel(let i), .padPan(let i), .padTune(let i):
+            var pad = project.program.pads[i]
+            switch p {
+            case .padLevel: pad.level = v
+            case .padPan: pad.pan = v
+            default: if !pad.layers.isEmpty { pad.layers[0].tune = v.rounded() }
+            }
+            guard pad != project.program.pads[i] else { return }
+            project.program.pads[i] = pad
+            send(.pad(i, pad))
+        case .xyX, .xyY:
+            if p == .xyX { project.mixer.xy.x = v } else { project.mixer.xy.y = v }
+            send(.xy(project.mixer.xy))
+        default:
+            var m = project.mixer
+            switch p {
+            case .samplerLevel: m.samplerLevel = v
+            case .synthLevel: m.synthLevel = v
+            case .masterLevel: m.masterLevel = v
+            case .submixLevel(let i): m.submixes[i].level = v
+            case .returnLevel(let i): m.returns[i].level = v
+            default: break
+            }
+            guard m != project.mixer else { return }
+            project.mixer = m
+            send(.mixer(m))
+        }
+    }
+
+    /// A knob or fader moved by hand. In Write mode while playing it's also recorded
+    /// into the selected track (one undo step per gesture).
+    public func setParam(_ p: AutoParam, _ v: Double) {
+        let first = touching[p] == nil
+        if first { checkpoint("Change \(p.label)", key: "param-\(p.label)") }
+        if automationMode == .write, transport.playing, transport.position >= 0 {
+            let tick = Int(transport.position)
+            let t = trackIndex
+            var seq = project.sequence
+            var lanes = seq.tracks[t].automation
+            let li = lanes.firstIndex { $0.param == p } ?? { lanes.append(AutomationLane(param: p)); return lanes.count - 1 }()
+            lanes[li].write(min(p.range.upperBound, max(p.range.lowerBound, v)), at: tick, from: touching[p] ?? nil)
+            seq.tracks[t].automation = lanes
+            project.sequence = seq
+            touching[p] = .some(tick)
+        } else if first {
+            touching[p] = .some(nil)
+        }
+        apply(p, v)
+        onChange(project)
+    }
+
+    /// The knob was let go: automation reads that parameter again.
+    public func endParam(_ p: AutoParam) { touching[p] = nil }
+
+    public func clearAutomation(_ p: AutoParam? = nil) {
+        let t = trackIndex
+        editSequence("Clear automation") { seq in
+            if let p { seq.tracks[t].automation.removeAll { $0.param == p } } else { seq.tracks[t].automation.removeAll() }
+        }
+    }
+
+    private func playAutomation(at tick: Double) {
+        let anySolo = project.sequence.tracks.contains { $0.solo }
+        for track in project.sequence.tracks where !track.mute && (!anySolo || track.solo) {
+            for lane in track.automation where touching[lane.param] == nil {
+                guard let v = lane.value(at: tick), abs(v - value(of: lane.param)) > 1e-3 else { continue }
+                apply(lane.param, v)
+            }
+        }
+    }
+
+    // MARK: - Song mode (SAMPLER_SPEC §7)
+
+    public func editSong(_ label: String, _ body: (inout Song) -> Void) {
+        var s = project.song
+        body(&s)
+        guard s != project.song else { return }
+        checkpoint(label)
+        project.song = s
+        onChange(project)
+    }
+
+    public func addSongStep(sequence: Int) {
+        editSong("Add step") { $0.steps.append(SongStep(sequence: sequence)) }
+    }
+
+    /// Plays the song from its first step.
+    public func playSong() {
+        let list = project.song.playlist.filter { project.sequences.indices.contains($0) }
+        guard !list.isEmpty else { return }
+        if transport.playing { stop() }
+        project.currentSequence = list[0]
+        songIndex = 0
+        send(.beatsPerBar(project.sequence.beatsPerBar))
+        var first = project.sequence
+        first.loop = list.count > 1 || project.song.loop // a one-step song plays once
+        send(.sequence(first)) // set directly: a queue while stopped would count as a swap
+        queueNextSongStep()
+        play()
+    }
+
+    private func queueNextSongStep() {
+        guard let i = songIndex else { return }
+        let list = project.song.playlist.filter { project.sequences.indices.contains($0) }
+        var next = i + 1
+        if next >= list.count {
+            guard project.song.loop else { return }
+            next = 0
+        }
+        let isLast = next == list.count - 1 && !project.song.loop
+        queuedSequence = list[next]
+        send(.queueSequence(project.sequences[list[next]], atBar: false, loop: isLast ? false : true))
+    }
+
+    private func sequenceSwapped() {
+        if let i = songIndex {
+            let list = project.song.playlist.filter { project.sequences.indices.contains($0) }
+            let next = i + 1 < list.count ? i + 1 : 0
+            songIndex = next
+            project.currentSequence = list[next]
+            queuedSequence = nil
+            queueNextSongStep()
+        } else if let q = queuedSequence {
+            project.currentSequence = q
+            queuedSequence = nil
+        }
+        selectedTrack = min(selectedTrack, project.sequence.tracks.count - 1)
+    }
+
+    /// Flattens the song into a new sequence and selects it.
+    public func convertSongToSequence() {
+        guard !project.song.steps.isEmpty, project.sequences.count < SamplerProject.maxSequences else { return }
+        checkpoint("Song → sequence")
+        let n = project.sequences.count + 1
+        project.sequences.append(project.song.flattened(project.sequences, name: String(format: "Sequence %02d", n)))
+        project.currentSequence = n - 1
+        send(.sequence(project.sequence))
+        onChange(project)
+    }
 
     /// Switches sequence (creating it, with the current length, if it's new).
     public func selectSequence(_ index: Int) {
         guard (0..<SamplerProject.maxSequences).contains(index), index != project.currentSequence else { return }
+        if nextSequenceMode, transport.playing, project.sequences.indices.contains(index) {
+            queuedSequence = index
+            send(.queueSequence(project.sequences[index], atBar: nextSequenceAtBar, loop: nil))
+            return
+        }
         if transport.recording != nil { endTake() }
         checkpoint("Sequence")
         let bars = project.sequence.bars
@@ -487,6 +852,10 @@ public final class SamplerController {
             send(.pad(i, project.program.pads[i]))
         }
         if project.mixer != old.mixer { send(.mixer(project.mixer)) }
+        if project.keygroups != old.keygroups {
+            for (i, k) in project.keygroups.enumerated() { send(.keygroup(i, k)) }
+        }
+        selectedTrack = min(selectedTrack, project.sequence.tracks.count - 1)
         if project.sequence != old.sequence || project.currentSequence != old.currentSequence {
             send(.sequence(project.sequence))
         }
@@ -497,9 +866,15 @@ public final class SamplerController {
 
     // MARK: - Chop, processes, sample versions
 
+    /// Samples a pad or keygroup zone uses.
+    public var usedSampleIDs: Set<SampleID> {
+        Set(project.program.pads.flatMap { $0.layers.compactMap(\.sampleID) }
+            + project.keygroups.flatMap { $0.zones.flatMap { $0.layers.compactMap(\.sampleID) } })
+    }
+
     /// Samples to list: everything not archived, plus archived ones a pad still uses.
     public var visibleSamples: [SampleInfo] {
-        let used = Set(project.program.pads.flatMap { $0.layers.compactMap(\.sampleID) })
+        let used = usedSampleIDs
         return project.samples.filter { !$0.archived || used.contains($0.id) }
     }
 
@@ -609,12 +984,28 @@ public final class SamplerController {
                 send(.pad(p, pad))
             }
         }
+        replaceInKeygroups(old) { $0 = new.id }
         onChange(project)
+    }
+
+    private func replaceInKeygroups(_ id: SampleID, _ body: (inout SampleID?) -> Void) {
+        for k in project.keygroups.indices {
+            var kg = project.keygroups[k]
+            for z in kg.zones.indices {
+                for l in kg.zones[z].layers.indices where kg.zones[z].layers[l].sampleID == id {
+                    body(&kg.zones[z].layers[l].sampleID)
+                }
+            }
+            if kg != project.keygroups[k] {
+                project.keygroups[k] = kg
+                send(.keygroup(k, kg))
+            }
+        }
     }
 
     /// Archived samples no pad uses (their files can go). Clears undo history.
     public func discardUnused() -> [SampleInfo] {
-        let used = Set(project.program.pads.flatMap { $0.layers.compactMap(\.sampleID) })
+        let used = usedSampleIDs
         let gone = project.samples.filter { $0.archived && !used.contains($0.id) }
         guard !gone.isEmpty else { return [] }
         project.samples.removeAll { s in gone.contains { $0.id == s.id } }
@@ -701,6 +1092,7 @@ public final class SamplerController {
                 send(.pad(i, p))
             }
         }
+        replaceInKeygroups(id) { $0 = nil }
         history.clear()
         onChange(project)
     }
@@ -714,6 +1106,12 @@ public final class SamplerController {
             $0.layers[layer].start = s
             $0.layers[layer].end = e == info.frames ? nil : e
         }
+    }
+
+    /// XY pad moves: a performance gesture, so no undo step per move.
+    public func setXY(_ body: (inout XYSettings) -> Void) {
+        body(&project.mixer.xy)
+        send(.xy(project.mixer.xy))
     }
 
     public func setMixer(_ body: (inout SamplerMixer) -> Void) {

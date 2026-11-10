@@ -173,7 +173,15 @@ public:
     void setVibratoCents(double c) { vibratoCents_ = c; }
 
     // Notes --------------------------------------------------------------------
+    /// Called for every note on/off (note -1 = all off), e.g. to send MIDI.
+    struct NoteHook {
+        void *context = nullptr;
+        void (*fn)(void *, int note, float velocity, bool on) = nullptr;
+    };
+    void setNoteHook(NoteHook h) { hook_ = h; }
+
     void noteOn(int note, float velocity, bool bass) {
+        if (hook_.fn) hook_.fn(hook_.context, note, velocity, true);
         SynthVoice *target = nullptr;
         for (auto &v : voices_)
             if (v.stage != SynthVoice::Off && v.note == note && v.stage != SynthVoice::Release) target = &v;
@@ -201,6 +209,7 @@ public:
     }
 
     void noteOff(int note) {
+        if (hook_.fn) hook_.fn(hook_.context, note, 0, false);
         for (auto &v : voices_)
             if (v.note == note && v.stage != SynthVoice::Off && v.stage != SynthVoice::Release) {
                 v.stage = SynthVoice::Release;
@@ -209,6 +218,7 @@ public:
     }
 
     void allOff() {
+        if (hook_.fn) hook_.fn(hook_.context, -1, 0, false);
         for (auto &v : voices_)
             if (v.stage != SynthVoice::Off) { v.stage = SynthVoice::Release; v.endedAt = clock_; }
     }
@@ -323,6 +333,7 @@ private:
     }
 
     double sr_;
+    NoteHook hook_;
     std::array<SynthVoice, kVoices> voices_{};
     PSPatch patch_{};
     uint64_t clock_ = 0;

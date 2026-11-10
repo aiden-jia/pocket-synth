@@ -157,3 +157,32 @@ struct AnalysisTests {
         #expect(Slicing.grid(frames: 96_000, sampleRate: sr, bpm: 120, beats: 1) == [0, 24_000, 48_000, 72_000])
     }
 }
+
+@Suite("Pitch detection")
+struct PitchTests {
+    @Test(arguments: [55.0, 110.0, 261.63, 440.0, 987.77])
+    func sineRoots(hz: Double) {
+        let found = PitchDetect.hz(sine(hz, seconds: 0.5)) ?? 0
+        #expect(abs(found - hz) / hz < 0.01, "\(found) vs \(hz)")
+    }
+
+    @Test func harmonicToneFindsTheFundamental() {
+        // A sawtooth-ish tone at A3 with a decaying envelope, like a plucked sample.
+        let n = Int(0.6 * sr)
+        let x = (0..<n).map { i -> Float in
+            let t = Double(i) / sr
+            let v = (1...8).reduce(0.0) { $0 + sin(2 * .pi * 220 * Double($1) * t) / Double($1) }
+            return Float(0.3 * v * exp(-t * 3))
+        }
+        #expect(PitchDetect.rootNote(AudioData(mono: x, sampleRate: sr)) == 57)
+    }
+
+    @Test func noiseHasNoPitch() {
+        var seed: UInt32 = 7
+        let x = (0..<24_000).map { _ -> Float in
+            seed = seed &* 1_664_525 &+ 1_013_904_223
+            return Float(Int32(bitPattern: seed)) / Float(Int32.max) * 0.5
+        }
+        #expect(PitchDetect.hz(AudioData(mono: x, sampleRate: sr)) == nil)
+    }
+}

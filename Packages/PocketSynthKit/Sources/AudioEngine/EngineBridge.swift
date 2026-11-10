@@ -15,6 +15,7 @@ public final class EngineBridge {
     public let sampleRate: Double
     public let samples: SampleLibrary
     private var pads: [Int: Pad] = [:]
+    private var keygroups: [Int: KeygroupProgram] = [:]
     private var tempo = 120.0
     /// Loop buffers by track (the engine owns them; kept here to read for "send to sampler").
     private var loopBuffers: [Int: OpaquePointer] = [:]
@@ -29,6 +30,31 @@ public final class EngineBridge {
         engine = ps_engine_create(sampleRate)
         samples = SampleLibrary()
         samples.engine = engine
+    }
+
+    /// A second engine for offline rendering (export) that plays the samples `library`
+    /// already loaded. It never frees them; keep them loaded until it's gone.
+    public init(sampleRate: Double, sharing library: SampleLibrary) {
+        self.sampleRate = sampleRate
+        engine = ps_engine_create(sampleRate)
+        samples = library
+    }
+
+    /// Renders offline (no audio device).
+    public func renderOffline(frames: Int) -> [[Float]] {
+        var l = [Float](repeating: 0, count: frames), r = l
+        var i = 0
+        let block = 4096
+        while i < frames {
+            let n = min(block, frames - i)
+            l.withUnsafeMutableBufferPointer { lp in
+                r.withUnsafeMutableBufferPointer { rp in
+                    ps_engine_render(engine, lp.baseAddress! + i, rp.baseAddress! + i, Int32(n))
+                }
+            }
+            i += n
+        }
+        return [l, r]
     }
 
     deinit {
@@ -127,6 +153,9 @@ public final class EngineBridge {
         case .metronome(let on, let level):
             set(PS_PARAM_METRONOME, on ? 1 : 0)
             set(PS_PARAM_METRONOME_LEVEL, level)
+        case .midiOut(let on):
+            set(PS_PARAM_MIDI_OUT, on ? 1 : 0)
+            set(PS_PARAM_MIDI_CLOCK_OUT, on ? 1 : 0)
         }
     }
 
@@ -199,10 +228,22 @@ public final class EngineBridge {
             set(PS_PARAM_SYNTH_LEVEL, m.synthLevel)
             set(PS_PARAM_SAMPLER_LEVEL, m.samplerLevel)
             set(PS_PARAM_MASTER_LEVEL, m.masterLevel)
+            for (i, s) in m.submixes.enumerated() {
+                ps_mixer_set_submix(engine, Int32(i), Float(s.level), Float(s.pan), s.mute ? 1 : 0,
+                                    Int32(s.insert.rawValue), Float(s.amount))
+            }
+            for (i, r) in m.returns.enumerated() { ps_mixer_set_return(engine, Int32(i), Int32(r.type.rawValue), Float(r.level)) }
+            ps_mixer_set_xy(engine, Int32(m.xy.type.rawValue), Float(m.xy.x), Float(m.xy.y), m.xy.active ? 1 : 0)
         case .sequence(let seq):
             var events = Self.engineEvents(seq)
             let compiled = ps_sequence_create(&events, Int32(events.count), Int32(seq.lengthTicks), seq.loop ? 1 : 0)
             ps_engine_set_sequence(engine, compiled)
+        case .xy(let xy):
+            ps_mixer_set_xy(engine, Int32(xy.type.rawValue), Float(xy.x), Float(xy.y), xy.active ? 1 : 0)
+        case .queueSequence(let seq, let atBar, let loop):
+            var events = Self.engineEvents(seq)
+            let compiled = ps_sequence_create(&events, Int32(events.count), Int32(seq.lengthTicks), (loop ?? seq.loop) ? 1 : 0)
+            ps_engine_queue_sequence(engine, compiled, atBar ? 1 : 0)
         case .transport(let playing, let start, let countIn):
             if playing { ps_transport_play(engine, Int32(start), Int32(countIn)) } else { ps_transport_stop(engine) }
         case .recording(let on, let guardTicks):
@@ -215,15 +256,63 @@ public final class EngineBridge {
             ps_note_repeat_set(engine, beats, Float(swing))
         case .repeatPad(let pad, let velocity, let tune):
             ps_note_repeat_pad(engine, Int32(pad), Int32(velocity), Float(tune))
+        case .keygroup(let i, let k):
+            keygroups[i] = k
+            sendKeygroup(i, k)
+        case .liveNote(let program, let note, let velocity):
+            let (target, index) = Self.target(program)
+            ps_live_note(engine, target, index, Int32(note), Int32(velocity))
         }
     }
 
-    /// Flattens the unmuted tracks into the engine's event array.
+    /// Flattens the audible tracks (unmuted; only soloed ones if any are) into the
+    /// engine's event array, each event tagged with its track's target.
     static func engineEvents(_ seq: PadSequence) -> [PSNoteEvent] {
-        seq.tracks.filter { !$0.mute }.flatMap(\.events).map {
-            PSNoteEvent(tick: Int32($0.tick), length: Int32($0.length), pad: Int32($0.pad),
-                        velocity: Int32($0.velocity), tune: Float($0.tune))
+        let anySolo = seq.tracks.contains { $0.solo }
+        return seq.tracks.filter { !$0.mute && (!anySolo || $0.solo) }.flatMap { track in
+            let (target, program) = Self.target(track.program)
+            return track.events.map {
+                PSNoteEvent(tick: Int32($0.tick), length: Int32($0.length), pad: Int32($0.pad),
+                            velocity: Int32($0.velocity), tune: Float($0.tune), target: target, program: program)
+            }
         }
+    }
+
+    static func target(_ p: TrackProgram) -> (Int32, Int32) {
+        switch p {
+        case .drum: (Int32(PS_TARGET_DRUM.rawValue), 0)
+        case .keygroup(let i): (Int32(PS_TARGET_KEYGROUP.rawValue), Int32(i))
+        case .synth: (Int32(PS_TARGET_SYNTH.rawValue), 0)
+        case .midi(let ch): (Int32(PS_TARGET_MIDI.rawValue), Int32(max(0, min(15, ch - 1))))
+        }
+    }
+
+    private func sendKeygroup(_ index: Int, _ k: KeygroupProgram) {
+        guard index < Int(PS_KEYGROUP_PROGRAMS) else { return }
+        var common = PSPadParams()
+        common.oneShot = 0
+        common.mono = k.mono ? 1 : 0
+        common.attackMs = Float(k.envelope.attackMs)
+        common.holdMs = Float(k.envelope.holdMs)
+        common.decayMs = Float(k.envelope.decayMs)
+        common.sustain = Float(k.envelope.sustain)
+        common.releaseMs = Float(k.envelope.releaseMs)
+        common.level = Float(k.level)
+        common.pan = Float(k.pan)
+        let zones = Array(k.zones.prefix(Int(PS_KEYGROUP_ZONES)))
+        for (zi, z) in zones.enumerated() {
+            var pad = Pad()
+            pad.layers = z.layers
+            let params = Self.params(for: pad) { self.samples.handle(for: $0) }
+            var zone = PSKeygroupZone()
+            zone.lowNote = Int32(z.lowNote)
+            zone.highNote = Int32(z.highNote)
+            zone.rootNote = Int32(z.rootNote)
+            zone.layers = params.layers
+            zone.layerCount = params.layerCount
+            ps_keygroup_set_zone(engine, Int32(index), Int32(zi), &zone)
+        }
+        ps_keygroup_set_program(engine, Int32(index), Int32(zones.count), &common)
     }
 
     // MARK: Telemetry
@@ -235,13 +324,15 @@ public final class EngineBridge {
         while true {
             let n = Int(ps_engine_poll_recorded(engine, &buf, Int32(buf.count)))
             out += buf.prefix(n).map {
-                RecordedHit(tick: Int($0.tick), pad: Int($0.pad), velocity: Int($0.velocity), tune: Double($0.tune))
+                RecordedHit(tick: Int($0.tick), pad: Int($0.pad), velocity: Int($0.velocity), tune: Double($0.tune),
+                            isNote: $0.target != Int32(PS_TARGET_DRUM.rawValue))
             }
             if n < buf.count { return out }
         }
     }
 
     public var transportTicks: Double { ps_transport_ticks(engine) }
+    public var sequenceGeneration: Int { Int(ps_transport_sequence_generation(engine)) }
     public var transportPlaying: Bool { ps_transport_playing(engine) != 0 }
     public var chordSequencePosition: Int? {
         let p = Int(ps_synth_seq_position(engine))
@@ -305,6 +396,15 @@ public final class EngineBridge {
 
     // MARK: Looper telemetry
 
+    /// Call before audio starts: MIDI timestamps are host ticks, delayed by `latency` s.
+    public func setHostClock(latency: Double) {
+        let tps = MIDIManager.hostTicksPerSecond
+        ps_engine_set_host_clock(engine, tps, latency * tps)
+    }
+
+    /// Live synth playing goes out on this channel (0-based).
+    public func setLiveMIDIChannel(_ ch: Int) { set(PS_PARAM_MIDI_CHANNEL, Double(ch)) }
+
     public var looperReports: [LoopTrackReport] {
         (0..<Int(PS_LOOPER_TRACKS)).map { LoopTrackReport(packed: Int(ps_looper_track(engine, Int32($0)))) }
     }
@@ -327,6 +427,9 @@ public final class EngineBridge {
     /// Re-sends pads that use `id` (after a sample finished loading).
     public func refreshPads(using id: SampleID) {
         for (i, p) in pads where p.layers.contains(where: { $0.sampleID == id }) { sendPad(i, p) }
+        for (i, k) in keygroups where k.zones.contains(where: { $0.layers.contains { $0.sampleID == id } }) {
+            sendKeygroup(i, k)
+        }
     }
 
     private func sendPad(_ index: Int, _ pad: Pad) {
@@ -347,6 +450,9 @@ public final class EngineBridge {
         p.releaseMs = Float(pad.envelope.releaseMs)
         p.level = Float(pad.level)
         p.pan = Float(pad.pan)
+        p.output = Int32(max(0, min(Int(PS_SUBMIXES), pad.output)))
+        let s = pad.sends + [0, 0, 0, 0]
+        p.sends = (Float(s[0]), Float(s[1]), Float(s[2]), Float(s[3]))
 
         var layers: [PSLayer] = []
         for l in pad.layers.prefix(Int(PS_MAX_LAYERS)) {

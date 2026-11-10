@@ -299,6 +299,11 @@ Unchanged from rev 1, except that the menus are now real touch lists *and* the c
   - Sequencer v1 records and edits track 1 of each sequence; the model already holds more tracks (phase 5 adds the track list).
   - Drum and beat sounds are synthesized (our own 7 kits), not samples.
   - The grid editor reads touches through a UIKit view, because SwiftUI drag gestures dropped quick successive taps.
+- **Phase 5:** built and unit-tested (250 tests); simulator checks so far: new sidebar, Program › Keygroups, auto-map. Notes:
+  - MIDI: the engine timestamps every outgoing event in host time (render host time + offset + output latency); a dedicated thread sends them through CoreMIDI (virtual "PocketSynth" source/destination + all devices). Incoming notes/sustain/panic go to a lock-serialized MIDI-in queue; clock, transport and the CC127-gated control CCs go to the main actor.
+  - Song mode uses an engine-side queued sequence that swaps at the end of the current one (or the next bar) and restarts the playhead there.
+  - Automation is played from the 30 Hz telemetry loop (fine for mixer-style moves; not sample-accurate).
+  - Submix inserts are one effect each (filter, drive, crush), not four; returns are fixed effect types.
 - **Phase 4:** done. Notes:
   - The looper and the recorder write into the same 2-channel `PSSample` buffers the sampler plays. The main thread allocates them; the audio thread hands them back through the garbage queue. Looper commands carry a generation number, which telemetry echoes, so the controller ignores reports older than its last command.
   - Mic input doesn't need the `AUAudioUnit` wrapper after all: an input-node tap pushes audio into a lock-free ring that the engine drains into the recorder. The session switches to play-and-record only while the Sample view uses the mic. Mic takes keep the input's own sample rate.

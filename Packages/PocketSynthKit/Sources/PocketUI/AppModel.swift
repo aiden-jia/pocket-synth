@@ -1,4 +1,5 @@
 import AudioEngine
+import ChordTheory
 import CoreGraphics
 import DSPKit
 import Foundation
@@ -27,6 +28,9 @@ public final class AppModel {
     public private(set) var missingSamples: Set<SampleID> = []
 
     @ObservationIgnored private let host: AudioHost
+    @ObservationIgnored private let midi: MIDIManager
+    @ObservationIgnored private var controlMap = MIDIControlMap()
+    @ObservationIgnored private var liveChannel = -1
     @ObservationIgnored private let bridge: EngineBridge
     @ObservationIgnored private let store: ProjectStore
     @ObservationIgnored private var saveTask: Task<Void, Never>?
@@ -51,6 +55,7 @@ public final class AppModel {
         host = AudioHost()
         let sampleRate = host.prepareSession()
         bridge = EngineBridge(sampleRate: sampleRate)
+        midi = MIDIManager(engine: bridge.engine)
         let session = SynthSession.load(from: store.directory.appendingPathComponent("synth.json"))
         synth = SynthController(state: session?.state ?? SynthState(),
                                 presets: session?.presets ?? Array(repeating: nil, count: 4))
@@ -64,6 +69,21 @@ public final class AppModel {
         sampler.start()
         sampler.onChange = { [weak self] in self?.scheduleSave($0) }
         synth.onSessionChange = { [weak self] in self?.scheduleSessionSave($0) }
+
+        bridge.setHostClock(latency: host.outputLatency)
+        midi.onTempo = { [weak self] in self?.synth.setTempo($0) }
+        midi.onTransport = { [weak self] t in
+            switch t {
+            case .start, .continue: self?.sampler.play()
+            case .stop: self?.sampler.stop()
+            }
+        }
+        midi.onControl = { [weak self] ch, cc, v in
+            guard let self, let action = self.controlMap.handle(channel: ch, controller: cc, value: v) else { return }
+            self.synth.apply(action)
+        }
+        midi.inputEnabled = synth.state.midiIn
+        midi.start()
 
         do {
             try host.start(rendering: bridge.engine)
@@ -82,10 +102,16 @@ public final class AppModel {
     /// Called ~30×/s: engine telemetry (recorded hits, playheads) and housekeeping.
     public func frame() {
         sampler.poll(hits: bridge.pollRecorded(), position: bridge.transportTicks,
-                     enginePlaying: bridge.transportPlaying)
+                     enginePlaying: bridge.transportPlaying, sequenceGeneration: bridge.sequenceGeneration)
         let step = synth.seqPlaying ? bridge.chordSequencePosition : nil
         if synth.seqPlayhead != step { synth.seqPlayhead = step }
         synth.updateLooper(bridge.looperReports, length: bridge.looperLength, position: bridge.looperPosition)
+        let ch = synth.liveMIDIChannel
+        if ch != liveChannel {
+            liveChannel = ch
+            bridge.setLiveMIDIChannel(ch)
+        }
+        if midi.inputEnabled != synth.state.midiIn { midi.inputEnabled = synth.state.midiIn }
         synth.tick(at: Self.now)
         pollRecorder()
         bridge.collectGarbage()
@@ -155,6 +181,7 @@ public final class AppModel {
     }
 
     public func deleteSample(_ id: SampleID) {
+        guard !exporting else { return } // the export engine is still playing it
         guard let info = sampler.project.sample(id) else { return }
         sampler.removeSample(id)
         bridge.samples.unload(id)
@@ -379,6 +406,12 @@ public final class AppModel {
                                                       sampleRate: c.sampleRate, bpm: c.bpm)
             if abs(c.bpm - bpm) > 0.01 { setBPM(c.bpm) }
             importMessage = "\(pads.count) slices → pads + \(sampler.sequence.name) at \(Int(c.bpm.rounded())) BPM"
+        case .phrase:
+            var k = KeygroupProgram(name: info.name)
+            k.zones = [KeygroupZone(lowNote: 0, highNote: 127, rootNote: 48, sample: c.sample)]
+            guard let i = sampler.addKeygroup(k) else { importMessage = "All 8 keygroups are in use."; return }
+            sampler.addTrack(.keygroup(i))
+            importMessage = "\(info.name) is keygroup \(i + 1) on a new track (C3 plays it at pitch)."
         case .samples:
             guard let audio = audioData(c.sample) else { return }
             do {
@@ -391,6 +424,26 @@ public final class AppModel {
                 importMessage = "Couldn't extract slices: \(error.localizedDescription)"
             }
         }
+    }
+
+    // MARK: Keygroups
+
+    /// Auto-map (SAMPLER_SPEC §3.2): finds each sample's root note (YIN) and spreads the
+    /// samples across the keyboard. Returns the new keygroup's index.
+    @discardableResult
+    public func autoMapKeygroup(_ ids: [SampleID], name: String) async -> Int? {
+        let audios = ids.compactMap { id in audioData(id).map { (id, $0) } }
+        guard !audios.isEmpty else { return nil }
+        busy = "Finding root notes…"
+        let roots = await Task.detached { audios.map { (id: $0.0, root: PitchDetect.rootNote($0.1) ?? 60) } }.value
+        busy = nil
+        guard let i = sampler.addKeygroup(KeygroupProgram.autoMap(name: name, samples: roots)) else {
+            importMessage = "All 8 keygroups are in use."
+            return nil
+        }
+        importMessage = "\(name): \(roots.count) zone\(roots.count == 1 ? "" : "s"), roots " + roots.sorted { $0.root < $1.root }
+            .map { PitchName.noteName($0.root) }.joined(separator: " ")
+        return i
     }
 
     // MARK: Processes (SAMPLER_SPEC §5.3)
@@ -427,6 +480,116 @@ public final class AppModel {
     }
 
     public func previewSelectedPad() { sampler.audition() }
+
+    // MARK: Export (SAMPLER_SPEC §10)
+
+    public enum ExportKind: String, CaseIterable, Sendable {
+        case mixdown, stems, midi
+        public var label: String { ["Mixdown (WAV)", "Stems (WAV per track)", "MIDI file"][Self.allCases.firstIndex(of: self)!] }
+    }
+
+    public enum ExportSource: String, CaseIterable, Sendable {
+        case sequence, song
+        public var label: String { self == .sequence ? "Current sequence" : "Song" }
+    }
+
+    /// Files from the last export (in Documents/PocketSynth/Exports, visible in Files).
+    public private(set) var exportedFiles: [URL] = []
+    public private(set) var exporting = false
+
+    var exportsDirectory: URL { store.directory.appendingPathComponent("Exports", isDirectory: true) }
+
+    /// The sequence to export: the current one, or the song flattened into one.
+    private func exportSequence(_ source: ExportSource) -> PadSequence? {
+        switch source {
+        case .sequence: return sampler.sequence
+        case .song:
+            let song = sampler.project.song
+            guard !song.steps.isEmpty else { return nil }
+            return song.flattened(sampler.project.sequences, name: "Song")
+        }
+    }
+
+    /// A second engine set up like the live one (same sound, pads, keygroups, mixer).
+    private func offlineBridge() -> EngineBridge {
+        let b = EngineBridge(sampleRate: bridge.sampleRate, sharing: bridge.samples)
+        for c in EngineCommand.diff(from: nil, to: synth.state) { b.apply(c) }
+        b.apply(EngineCommand.metronome(on: false, level: 0))
+        b.apply(EngineCommand.midiOut(false))
+        for (i, p) in sampler.project.program.pads.enumerated() where !p.isEmpty { b.apply(SamplerCommand.pad(i, p)) }
+        for (i, k) in sampler.project.keygroups.enumerated() { b.apply(SamplerCommand.keygroup(i, k)) }
+        var mixer = sampler.project.mixer
+        mixer.xy.active = false
+        b.apply(SamplerCommand.mixer(mixer))
+        return b
+    }
+
+    /// Renders `seq` once (plus a release tail) through a fresh offline engine.
+    private func render(_ seq: PadSequence, tail: Double = 2) async -> [[Float]] {
+        var once = seq
+        once.loop = false
+        let b = offlineBridge()
+        b.apply(SamplerCommand.beatsPerBar(once.beatsPerBar))
+        b.apply(SamplerCommand.sequence(once))
+        b.apply(SamplerCommand.transport(playing: true, startTick: 0, countInBeats: 0))
+        let seconds = Double(once.lengthTicks) / Double(PPQN.ticks) * 60 / bpm + tail
+        let total = Int(seconds * bridge.sampleRate)
+        var out: [[Float]] = [[], []]
+        let chunk = Int(bridge.sampleRate * 2)
+        var done = 0
+        while done < total {
+            let part = b.renderOffline(frames: min(chunk, total - done))
+            out[0] += part[0]
+            out[1] += part[1]
+            done += part[0].count
+            await Task.yield() // keep the UI alive
+        }
+        return out
+    }
+
+    private func safeName(_ s: String) -> String {
+        String(s.map { $0.isLetter || $0.isNumber || $0 == " " || $0 == "-" ? $0 : "_" }).trimmingCharacters(in: .whitespaces)
+    }
+
+    public func export(_ kind: ExportKind, source: ExportSource, bitDepth: Int = 24) async {
+        guard !exporting else { return }
+        guard let seq = exportSequence(source) else {
+            importMessage = "The song is empty. Add steps in Song first."
+            return
+        }
+        exporting = true
+        busy = "Exporting…"
+        defer { exporting = false; busy = nil }
+        do {
+            try FileManager.default.createDirectory(at: exportsDirectory, withIntermediateDirectories: true)
+            let base = safeName(source == .song ? "Song" : seq.name)
+            var files: [URL] = []
+            switch kind {
+            case .midi:
+                let url = exportsDirectory.appendingPathComponent("\(base).mid")
+                try MIDIFile.make(seq, bpm: bpm).write(to: url, options: .atomic)
+                files = [url]
+            case .mixdown:
+                let audio = await render(seq)
+                let url = exportsDirectory.appendingPathComponent("\(base).wav")
+                try SampleLibrary.writeWAV(audio, sampleRate: bridge.sampleRate, to: url, bitDepth: bitDepth)
+                files = [url]
+            case .stems:
+                for (i, t) in seq.tracks.enumerated() where !t.events.isEmpty {
+                    var solo = seq
+                    for j in solo.tracks.indices { solo.tracks[j].mute = j != i; solo.tracks[j].solo = false }
+                    let audio = await render(solo)
+                    let url = exportsDirectory.appendingPathComponent("\(base) - \(i + 1) \(safeName(t.name)).wav")
+                    try SampleLibrary.writeWAV(audio, sampleRate: bridge.sampleRate, to: url, bitDepth: bitDepth)
+                    files.append(url)
+                }
+            }
+            exportedFiles = files
+            importMessage = files.isEmpty ? "Nothing to export." : "Exported \(files.count) file\(files.count == 1 ? "" : "s") to Files › PocketSynth › Exports."
+        } catch {
+            importMessage = "Export failed: \(error.localizedDescription)"
+        }
+    }
 
     private func scheduleSave(_ project: SamplerProject) {
         saveTask?.cancel()

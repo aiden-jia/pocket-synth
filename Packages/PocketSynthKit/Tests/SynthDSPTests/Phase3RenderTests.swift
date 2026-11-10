@@ -60,7 +60,8 @@ extension OfflineEngine {
 }
 
 func event(_ tick: Int, pad: Int = 0, velocity: Int = 100, length: Int = 120, tune: Float = 0) -> PSNoteEvent {
-    PSNoteEvent(tick: Int32(tick), length: Int32(length), pad: Int32(pad), velocity: Int32(velocity), tune: tune)
+    PSNoteEvent(tick: Int32(tick), length: Int32(length), pad: Int32(pad), velocity: Int32(velocity), tune: tune,
+                target: Int32(PS_TARGET_DRUM.rawValue), program: 0)
 }
 
 // Transport & sequencer --------------------------------------------------------------

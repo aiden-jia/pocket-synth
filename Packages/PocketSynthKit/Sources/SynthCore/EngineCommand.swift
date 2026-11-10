@@ -37,11 +37,12 @@ public enum EngineCommand: Equatable, Sendable {
     case looperPause(Bool)
     case looperGain(track: Int, gain: Double)
     case metronome(on: Bool, level: Double)
+    case midiOut(Bool)
 }
 
 extension EngineCommand {
     /// Commands needed to move the engine from state `a` to state `b` (excluding chords).
-    static func diff(from a: SynthState?, to b: SynthState) -> [EngineCommand] {
+    public static func diff(from a: SynthState?, to b: SynthState) -> [EngineCommand] {
         var out: [EngineCommand] = []
         if a?.mode != b.mode { out += [.allNotesOff, .mode(b.mode)] }
         if a?.soundIndex != b.soundIndex { out.append(.sound(index: b.soundIndex, engine: b.sound.engine)) }
@@ -63,6 +64,7 @@ extension EngineCommand {
                                arpRate: b.arpRate, repeatRate: b.repeatRate, seqRate: b.seqRate))
         }
         if a?.drumKit != b.drumKit { out.append(.drumKit(b.drumKit)) }
+        if a?.midiOut != b.midiOut { out.append(.midiOut(b.midiOut)) }
         if a?.metronome != b.metronome || a?.metronomeLevel != b.metronomeLevel {
             out.append(.metronome(on: b.metronome, level: b.metronomeLevel))
         }

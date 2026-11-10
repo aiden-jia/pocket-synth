@@ -49,13 +49,19 @@ public final class AudioHost {
     nonisolated private static func makeSourceNode(engine: OpaquePointer,
                                                    format: AVAudioFormat) -> AVAudioSourceNode {
         nonisolated(unsafe) let engine = engine
-        return AVAudioSourceNode(format: format) { _, _, frameCount, bufferList -> OSStatus in
+        return AVAudioSourceNode(format: format) { _, timestamp, frameCount, bufferList -> OSStatus in
             let buffers = UnsafeMutableAudioBufferListPointer(bufferList)
             guard buffers.count >= 2,
                   let left = buffers[0].mData?.assumingMemoryBound(to: Float.self),
                   let right = buffers[1].mData?.assumingMemoryBound(to: Float.self)
             else { return noErr }
-            ps_engine_render(engine, left, right, Int32(frameCount))
+            // The host time lets the engine timestamp MIDI in step with this buffer.
+            let ts = timestamp.pointee
+            if ts.mFlags.contains(.hostTimeValid) {
+                ps_engine_render_at(engine, left, right, Int32(frameCount), ts.mHostTime)
+            } else {
+                ps_engine_render(engine, left, right, Int32(frameCount))
+            }
             return noErr
         }
     }
@@ -63,6 +69,16 @@ public final class AudioHost {
     /// Stops rendering. Do this before the engine it renders is destroyed.
     public func stop() {
         avEngine.stop()
+    }
+
+    /// Output latency (seconds): audio rendered now is heard this much later.
+    public var outputLatency: Double {
+        #if os(iOS)
+        let s = AVAudioSession.sharedInstance()
+        return s.outputLatency + s.ioBufferDuration
+        #else
+        return 0.01
+        #endif
     }
 
     // MARK: Input (sampling)

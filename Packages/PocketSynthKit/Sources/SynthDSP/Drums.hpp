@@ -53,8 +53,15 @@ public:
     void setKit(int kit) { kit_ = std::clamp(kit, 0, PS_DRUM_KITS - 1); }
     int kit() const { return kit_; }
 
+    struct HitHook {
+        void *context = nullptr;
+        void (*fn)(void *, int voice, int velocity) = nullptr;
+    };
+    void setHitHook(HitHook h) { hook_ = h; }
+
     void trigger(int type, int velocity) {
         if (type < 0 || type >= PS_DRUM_VOICES) return;
+        if (hook_.fn) hook_.fn(hook_.context, type, velocity);
         if (type == ClosedHat) voices_[OpenHat].c2 = expCoef(4, sr_); // closed hat chokes the open hat
         const DrumKit &k = kDrumKits[kit_];
         DrumVoice &v = voices_[type];
@@ -202,6 +209,7 @@ private:
     }
 
     double sr_;
+    HitHook hook_;
     int kit_ = 0;
     std::array<DrumVoice, PS_DRUM_VOICES> voices_{};
 };

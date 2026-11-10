@@ -160,6 +160,17 @@ struct PadEditView: View {
                         s.updateSelected { p in for i in p.layers.indices { p.layers[i].tune = v.rounded() } }
                     }
                 }
+                Section("ROUTING") {
+                    Picker("Output", selection: Binding(get: { pad.output }, set: { v in s.updateSelected { $0.output = v } })) {
+                        Text("Sampler main").tag(0)
+                        ForEach(1...SamplerMixer.submixCount, id: \.self) { Text("Submix \($0)").tag($0) }
+                    }
+                    .pickerStyle(.menu)
+                    .tint(Theme.text)
+                    ForEach(0..<SamplerMixer.returnCount, id: \.self) { k in
+                        ParamSlider("Send \(k + 1)", pad.sends[k], 0...1, pct) { v in s.updateSelected { $0.sends[k] = v } }
+                    }
+                }
                 Section("ENVELOPE") {
                     let e = pad.envelope
                     ParamSlider("Attack", e.attackMs, 0...2000, ms) { v in s.updateSelected { $0.envelope.attackMs = v } }
@@ -289,9 +300,11 @@ struct MixerView: View {
         let s = sampler
         let m = s.project.mixer
         HStack(spacing: 10) {
-            Fader(label: "SYNTH", value: m.synthLevel) { v in s.setMixer { $0.synthLevel = v } }
-            Fader(label: "SAMPLER", value: m.samplerLevel) { v in s.setMixer { $0.samplerLevel = v } }
-            Fader(label: "MASTER", value: m.masterLevel, color: Theme.warm) { v in s.setMixer { $0.masterLevel = v } }
+            // Faders go through setParam, so Write automation records them.
+            Fader(label: "SYNTH", value: m.synthLevel, onChange: { s.setParam(.synthLevel, $0) }, onEnd: { s.endParam(.synthLevel) })
+            Fader(label: "SAMPLER", value: m.samplerLevel, onChange: { s.setParam(.samplerLevel, $0) }, onEnd: { s.endParam(.samplerLevel) })
+            Fader(label: "MASTER", value: m.masterLevel, color: Theme.warm,
+                  onChange: { s.setParam(.masterLevel, $0) }, onEnd: { s.endParam(.masterLevel) })
             Divider().background(Theme.stroke)
             VStack(alignment: .leading, spacing: 6) {
                 Text("BANK \(PadAddress.bankName(s.bank)) PADS")
@@ -302,9 +315,8 @@ struct MixerView: View {
                             let g = row * 8 + col
                             let pad = PadAddress.pad(bank: s.bank, gridIndex: g)
                             Fader(label: String(format: "%02d", g + 1),
-                                  value: s.project.program.pads[pad].level, range: 0...2, compact: true) { v in
-                                s.updatePad(pad) { $0.level = v }
-                            }
+                                  value: s.project.program.pads[pad].level, range: 0...2, compact: true,
+                                  onChange: { s.setParam(.padLevel(pad), $0) }, onEnd: { s.endParam(.padLevel(pad)) })
                         }
                     }
                 }
@@ -321,6 +333,7 @@ struct Fader: View {
     var color: Color = Theme.accent
     var compact = false
     let onChange: (Double) -> Void
+    var onEnd: () -> Void = {}
 
     var body: some View {
         VStack(spacing: 6) {
@@ -340,7 +353,8 @@ struct Fader: View {
                     var v = range.lowerBound + u * (range.upperBound - range.lowerBound)
                     if abs(v - 1) < 0.03 { v = 1 } // snap to unity
                     onChange(v)
-                })
+                }
+                .onEnded { _ in onEnd() })
             }
             .frame(minWidth: compact ? 10 : 24, maxWidth: compact ? 22 : 40)
             Text(label)
