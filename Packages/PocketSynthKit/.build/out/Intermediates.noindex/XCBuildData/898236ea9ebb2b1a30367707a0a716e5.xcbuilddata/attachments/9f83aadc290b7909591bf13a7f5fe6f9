@@ -1,0 +1,49 @@
+{
+  "" : {
+    "diagnostics" : "/Users/aidenjia/Documents/pocketsynth/Packages/PocketSynthKit/.build/out/Intermediates.noindex/PocketSynthKit.build/Debug/AudioEngineTests-p.build/Objects-normal/arm64/AudioEngineTests-primary.dia",
+    "emit-module-dependencies" : "/Users/aidenjia/Documents/pocketsynth/Packages/PocketSynthKit/.build/out/Intermediates.noindex/PocketSynthKit.build/Debug/AudioEngineTests-p.build/Objects-normal/arm64/AudioEngineTests-primary-emit-module.d",
+    "emit-module-diagnostics" : "/Users/aidenjia/Documents/pocketsynth/Packages/PocketSynthKit/.build/out/Intermediates.noindex/PocketSynthKit.build/Debug/AudioEngineTests-p.build/Objects-normal/arm64/AudioEngineTests-primary-emit-module.dia",
+    "pch" : "/Users/aidenjia/Documents/pocketsynth/Packages/PocketSynthKit/.build/out/Intermediates.noindex/PocketSynthKit.build/Debug/AudioEngineTests-p.build/Objects-normal/arm64/AudioEngineTests-primary-Bridging-header.pch",
+    "swift-dependencies" : "/Users/aidenjia/Documents/pocketsynth/Packages/PocketSynthKit/.build/out/Intermediates.noindex/PocketSynthKit.build/Debug/AudioEngineTests-p.build/Objects-normal/arm64/AudioEngineTests-primary.swiftdeps"
+  },
+  "/Users/aidenjia/Documents/pocketsynth/Packages/PocketSynthKit/.build/out/Intermediates.noindex/PocketSynthKit.build/Debug/AudioEngineTests-p.build/DerivedSources/test_entry_point.swift" : {
+    "const-values" : "/Users/aidenjia/Documents/pocketsynth/Packages/PocketSynthKit/.build/out/Intermediates.noindex/PocketSynthKit.build/Debug/AudioEngineTests-p.build/Objects-normal/arm64/test_entry_point.swiftconstvalues",
+    "dependencies" : "/Users/aidenjia/Documents/pocketsynth/Packages/PocketSynthKit/.build/out/Intermediates.noindex/PocketSynthKit.build/Debug/AudioEngineTests-p.build/Objects-normal/arm64/test_entry_point.d",
+    "diagnostics" : "/Users/aidenjia/Documents/pocketsynth/Packages/PocketSynthKit/.build/out/Intermediates.noindex/PocketSynthKit.build/Debug/AudioEngineTests-p.build/Objects-normal/arm64/test_entry_point.dia",
+    "index-unit-output-path" : "/PocketSynthKit.build/Debug/AudioEngineTests-p.build/Objects-normal/arm64/test_entry_point.o",
+    "llvm-bc" : "/Users/aidenjia/Documents/pocketsynth/Packages/PocketSynthKit/.build/out/Intermediates.noindex/PocketSynthKit.build/Debug/AudioEngineTests-p.build/Objects-normal/arm64/test_entry_point.bc",
+    "object" : "/Users/aidenjia/Documents/pocketsynth/Packages/PocketSynthKit/.build/out/Intermediates.noindex/PocketSynthKit.build/Debug/AudioEngineTests-p.build/Objects-normal/arm64/test_entry_point.o",
+    "swift-dependencies" : "/Users/aidenjia/Documents/pocketsynth/Packages/PocketSynthKit/.build/out/Intermediates.noindex/PocketSynthKit.build/Debug/AudioEngineTests-p.build/Objects-normal/arm64/test_entry_point.swiftdeps",
+    "swiftmodule" : "/Users/aidenjia/Documents/pocketsynth/Packages/PocketSynthKit/.build/out/Intermediates.noindex/PocketSynthKit.build/Debug/AudioEngineTests-p.build/Objects-normal/arm64/test_entry_point~partial.swiftmodule"
+  },
+  "/Users/aidenjia/Documents/pocketsynth/Packages/PocketSynthKit/Tests/AudioEngineTests/EngineBridgeTests.swift" : {
+    "const-values" : "/Users/aidenjia/Documents/pocketsynth/Packages/PocketSynthKit/.build/out/Intermediates.noindex/PocketSynthKit.build/Debug/AudioEngineTests-p.build/Objects-normal/arm64/EngineBridgeTests.swiftconstvalues",
+    "dependencies" : "/Users/aidenjia/Documents/pocketsynth/Packages/PocketSynthKit/.build/out/Intermediates.noindex/PocketSynthKit.build/Debug/AudioEngineTests-p.build/Objects-normal/arm64/EngineBridgeTests.d",
+    "diagnostics" : "/Users/aidenjia/Documents/pocketsynth/Packages/PocketSynthKit/.build/out/Intermediates.noindex/PocketSynthKit.build/Debug/AudioEngineTests-p.build/Objects-normal/arm64/EngineBridgeTests.dia",
+    "index-unit-output-path" : "/PocketSynthKit.build/Debug/AudioEngineTests-p.build/Objects-normal/arm64/EngineBridgeTests.o",
+    "llvm-bc" : "/Users/aidenjia/Documents/pocketsynth/Packages/PocketSynthKit/.build/out/Intermediates.noindex/PocketSynthKit.build/Debug/AudioEngineTests-p.build/Objects-normal/arm64/EngineBridgeTests.bc",
+    "object" : "/Users/aidenjia/Documents/pocketsynth/Packages/PocketSynthKit/.build/out/Intermediates.noindex/PocketSynthKit.build/Debug/AudioEngineTests-p.build/Objects-normal/arm64/EngineBridgeTests.o",
+    "swift-dependencies" : "/Users/aidenjia/Documents/pocketsynth/Packages/PocketSynthKit/.build/out/Intermediates.noindex/PocketSynthKit.build/Debug/AudioEngineTests-p.build/Objects-normal/arm64/EngineBridgeTests.swiftdeps",
+    "swiftmodule" : "/Users/aidenjia/Documents/pocketsynth/Packages/PocketSynthKit/.build/out/Intermediates.noindex/PocketSynthKit.build/Debug/AudioEngineTests-p.build/Objects-normal/arm64/EngineBridgeTests~partial.swiftmodule"
+  },
+  "/Users/aidenjia/Documents/pocketsynth/Packages/PocketSynthKit/Tests/AudioEngineTests/SamplerBridgeTests.swift" : {
+    "const-values" : "/Users/aidenjia/Documents/pocketsynth/Packages/PocketSynthKit/.build/out/Intermediates.noindex/PocketSynthKit.build/Debug/AudioEngineTests-p.build/Objects-normal/arm64/SamplerBridgeTests.swiftconstvalues",
+    "dependencies" : "/Users/aidenjia/Documents/pocketsynth/Packages/PocketSynthKit/.build/out/Intermediates.noindex/PocketSynthKit.build/Debug/AudioEngineTests-p.build/Objects-normal/arm64/SamplerBridgeTests.d",
+    "diagnostics" : "/Users/aidenjia/Documents/pocketsynth/Packages/PocketSynthKit/.build/out/Intermediates.noindex/PocketSynthKit.build/Debug/AudioEngineTests-p.build/Objects-normal/arm64/SamplerBridgeTests.dia",
+    "index-unit-output-path" : "/PocketSynthKit.build/Debug/AudioEngineTests-p.build/Objects-normal/arm64/SamplerBridgeTests.o",
+    "llvm-bc" : "/Users/aidenjia/Documents/pocketsynth/Packages/PocketSynthKit/.build/out/Intermediates.noindex/PocketSynthKit.build/Debug/AudioEngineTests-p.build/Objects-normal/arm64/SamplerBridgeTests.bc",
+    "object" : "/Users/aidenjia/Documents/pocketsynth/Packages/PocketSynthKit/.build/out/Intermediates.noindex/PocketSynthKit.build/Debug/AudioEngineTests-p.build/Objects-normal/arm64/SamplerBridgeTests.o",
+    "swift-dependencies" : "/Users/aidenjia/Documents/pocketsynth/Packages/PocketSynthKit/.build/out/Intermediates.noindex/PocketSynthKit.build/Debug/AudioEngineTests-p.build/Objects-normal/arm64/SamplerBridgeTests.swiftdeps",
+    "swiftmodule" : "/Users/aidenjia/Documents/pocketsynth/Packages/PocketSynthKit/.build/out/Intermediates.noindex/PocketSynthKit.build/Debug/AudioEngineTests-p.build/Objects-normal/arm64/SamplerBridgeTests~partial.swiftmodule"
+  },
+  "/Users/aidenjia/Documents/pocketsynth/Packages/PocketSynthKit/Tests/AudioEngineTests/SequencerBridgeTests.swift" : {
+    "const-values" : "/Users/aidenjia/Documents/pocketsynth/Packages/PocketSynthKit/.build/out/Intermediates.noindex/PocketSynthKit.build/Debug/AudioEngineTests-p.build/Objects-normal/arm64/SequencerBridgeTests.swiftconstvalues",
+    "dependencies" : "/Users/aidenjia/Documents/pocketsynth/Packages/PocketSynthKit/.build/out/Intermediates.noindex/PocketSynthKit.build/Debug/AudioEngineTests-p.build/Objects-normal/arm64/SequencerBridgeTests.d",
+    "diagnostics" : "/Users/aidenjia/Documents/pocketsynth/Packages/PocketSynthKit/.build/out/Intermediates.noindex/PocketSynthKit.build/Debug/AudioEngineTests-p.build/Objects-normal/arm64/SequencerBridgeTests.dia",
+    "index-unit-output-path" : "/PocketSynthKit.build/Debug/AudioEngineTests-p.build/Objects-normal/arm64/SequencerBridgeTests.o",
+    "llvm-bc" : "/Users/aidenjia/Documents/pocketsynth/Packages/PocketSynthKit/.build/out/Intermediates.noindex/PocketSynthKit.build/Debug/AudioEngineTests-p.build/Objects-normal/arm64/SequencerBridgeTests.bc",
+    "object" : "/Users/aidenjia/Documents/pocketsynth/Packages/PocketSynthKit/.build/out/Intermediates.noindex/PocketSynthKit.build/Debug/AudioEngineTests-p.build/Objects-normal/arm64/SequencerBridgeTests.o",
+    "swift-dependencies" : "/Users/aidenjia/Documents/pocketsynth/Packages/PocketSynthKit/.build/out/Intermediates.noindex/PocketSynthKit.build/Debug/AudioEngineTests-p.build/Objects-normal/arm64/SequencerBridgeTests.swiftdeps",
+    "swiftmodule" : "/Users/aidenjia/Documents/pocketsynth/Packages/PocketSynthKit/.build/out/Intermediates.noindex/PocketSynthKit.build/Debug/AudioEngineTests-p.build/Objects-normal/arm64/SequencerBridgeTests~partial.swiftmodule"
+  }
+}

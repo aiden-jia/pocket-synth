@@ -1,0 +1,59 @@
+{
+  "" : {
+    "diagnostics" : "/Users/aidenjia/Documents/pocketsynth/Packages/PocketSynthKit/.build/out/Intermediates.noindex/PocketSynthKit.build/Debug/SynthDSPTests-p.build/Objects-normal/arm64/SynthDSPTests-primary.dia",
+    "emit-module-dependencies" : "/Users/aidenjia/Documents/pocketsynth/Packages/PocketSynthKit/.build/out/Intermediates.noindex/PocketSynthKit.build/Debug/SynthDSPTests-p.build/Objects-normal/arm64/SynthDSPTests-primary-emit-module.d",
+    "emit-module-diagnostics" : "/Users/aidenjia/Documents/pocketsynth/Packages/PocketSynthKit/.build/out/Intermediates.noindex/PocketSynthKit.build/Debug/SynthDSPTests-p.build/Objects-normal/arm64/SynthDSPTests-primary-emit-module.dia",
+    "pch" : "/Users/aidenjia/Documents/pocketsynth/Packages/PocketSynthKit/.build/out/Intermediates.noindex/PocketSynthKit.build/Debug/SynthDSPTests-p.build/Objects-normal/arm64/SynthDSPTests-primary-Bridging-header.pch",
+    "swift-dependencies" : "/Users/aidenjia/Documents/pocketsynth/Packages/PocketSynthKit/.build/out/Intermediates.noindex/PocketSynthKit.build/Debug/SynthDSPTests-p.build/Objects-normal/arm64/SynthDSPTests-primary.swiftdeps"
+  },
+  "/Users/aidenjia/Documents/pocketsynth/Packages/PocketSynthKit/.build/out/Intermediates.noindex/PocketSynthKit.build/Debug/SynthDSPTests-p.build/DerivedSources/test_entry_point.swift" : {
+    "const-values" : "/Users/aidenjia/Documents/pocketsynth/Packages/PocketSynthKit/.build/out/Intermediates.noindex/PocketSynthKit.build/Debug/SynthDSPTests-p.build/Objects-normal/arm64/test_entry_point.swiftconstvalues",
+    "dependencies" : "/Users/aidenjia/Documents/pocketsynth/Packages/PocketSynthKit/.build/out/Intermediates.noindex/PocketSynthKit.build/Debug/SynthDSPTests-p.build/Objects-normal/arm64/test_entry_point.d",
+    "diagnostics" : "/Users/aidenjia/Documents/pocketsynth/Packages/PocketSynthKit/.build/out/Intermediates.noindex/PocketSynthKit.build/Debug/SynthDSPTests-p.build/Objects-normal/arm64/test_entry_point.dia",
+    "index-unit-output-path" : "/PocketSynthKit.build/Debug/SynthDSPTests-p.build/Objects-normal/arm64/test_entry_point.o",
+    "llvm-bc" : "/Users/aidenjia/Documents/pocketsynth/Packages/PocketSynthKit/.build/out/Intermediates.noindex/PocketSynthKit.build/Debug/SynthDSPTests-p.build/Objects-normal/arm64/test_entry_point.bc",
+    "object" : "/Users/aidenjia/Documents/pocketsynth/Packages/PocketSynthKit/.build/out/Intermediates.noindex/PocketSynthKit.build/Debug/SynthDSPTests-p.build/Objects-normal/arm64/test_entry_point.o",
+    "swift-dependencies" : "/Users/aidenjia/Documents/pocketsynth/Packages/PocketSynthKit/.build/out/Intermediates.noindex/PocketSynthKit.build/Debug/SynthDSPTests-p.build/Objects-normal/arm64/test_entry_point.swiftdeps",
+    "swiftmodule" : "/Users/aidenjia/Documents/pocketsynth/Packages/PocketSynthKit/.build/out/Intermediates.noindex/PocketSynthKit.build/Debug/SynthDSPTests-p.build/Objects-normal/arm64/test_entry_point~partial.swiftmodule"
+  },
+  "/Users/aidenjia/Documents/pocketsynth/Packages/PocketSynthKit/Tests/SynthDSPTests/EngineRenderTests.swift" : {
+    "const-values" : "/Users/aidenjia/Documents/pocketsynth/Packages/PocketSynthKit/.build/out/Intermediates.noindex/PocketSynthKit.build/Debug/SynthDSPTests-p.build/Objects-normal/arm64/EngineRenderTests.swiftconstvalues",
+    "dependencies" : "/Users/aidenjia/Documents/pocketsynth/Packages/PocketSynthKit/.build/out/Intermediates.noindex/PocketSynthKit.build/Debug/SynthDSPTests-p.build/Objects-normal/arm64/EngineRenderTests.d",
+    "diagnostics" : "/Users/aidenjia/Documents/pocketsynth/Packages/PocketSynthKit/.build/out/Intermediates.noindex/PocketSynthKit.build/Debug/SynthDSPTests-p.build/Objects-normal/arm64/EngineRenderTests.dia",
+    "index-unit-output-path" : "/PocketSynthKit.build/Debug/SynthDSPTests-p.build/Objects-normal/arm64/EngineRenderTests.o",
+    "llvm-bc" : "/Users/aidenjia/Documents/pocketsynth/Packages/PocketSynthKit/.build/out/Intermediates.noindex/PocketSynthKit.build/Debug/SynthDSPTests-p.build/Objects-normal/arm64/EngineRenderTests.bc",
+    "object" : "/Users/aidenjia/Documents/pocketsynth/Packages/PocketSynthKit/.build/out/Intermediates.noindex/PocketSynthKit.build/Debug/SynthDSPTests-p.build/Objects-normal/arm64/EngineRenderTests.o",
+    "swift-dependencies" : "/Users/aidenjia/Documents/pocketsynth/Packages/PocketSynthKit/.build/out/Intermediates.noindex/PocketSynthKit.build/Debug/SynthDSPTests-p.build/Objects-normal/arm64/EngineRenderTests.swiftdeps",
+    "swiftmodule" : "/Users/aidenjia/Documents/pocketsynth/Packages/PocketSynthKit/.build/out/Intermediates.noindex/PocketSynthKit.build/Debug/SynthDSPTests-p.build/Objects-normal/arm64/EngineRenderTests~partial.swiftmodule"
+  },
+  "/Users/aidenjia/Documents/pocketsynth/Packages/PocketSynthKit/Tests/SynthDSPTests/Phase2RenderTests.swift" : {
+    "const-values" : "/Users/aidenjia/Documents/pocketsynth/Packages/PocketSynthKit/.build/out/Intermediates.noindex/PocketSynthKit.build/Debug/SynthDSPTests-p.build/Objects-normal/arm64/Phase2RenderTests.swiftconstvalues",
+    "dependencies" : "/Users/aidenjia/Documents/pocketsynth/Packages/PocketSynthKit/.build/out/Intermediates.noindex/PocketSynthKit.build/Debug/SynthDSPTests-p.build/Objects-normal/arm64/Phase2RenderTests.d",
+    "diagnostics" : "/Users/aidenjia/Documents/pocketsynth/Packages/PocketSynthKit/.build/out/Intermediates.noindex/PocketSynthKit.build/Debug/SynthDSPTests-p.build/Objects-normal/arm64/Phase2RenderTests.dia",
+    "index-unit-output-path" : "/PocketSynthKit.build/Debug/SynthDSPTests-p.build/Objects-normal/arm64/Phase2RenderTests.o",
+    "llvm-bc" : "/Users/aidenjia/Documents/pocketsynth/Packages/PocketSynthKit/.build/out/Intermediates.noindex/PocketSynthKit.build/Debug/SynthDSPTests-p.build/Objects-normal/arm64/Phase2RenderTests.bc",
+    "object" : "/Users/aidenjia/Documents/pocketsynth/Packages/PocketSynthKit/.build/out/Intermediates.noindex/PocketSynthKit.build/Debug/SynthDSPTests-p.build/Objects-normal/arm64/Phase2RenderTests.o",
+    "swift-dependencies" : "/Users/aidenjia/Documents/pocketsynth/Packages/PocketSynthKit/.build/out/Intermediates.noindex/PocketSynthKit.build/Debug/SynthDSPTests-p.build/Objects-normal/arm64/Phase2RenderTests.swiftdeps",
+    "swiftmodule" : "/Users/aidenjia/Documents/pocketsynth/Packages/PocketSynthKit/.build/out/Intermediates.noindex/PocketSynthKit.build/Debug/SynthDSPTests-p.build/Objects-normal/arm64/Phase2RenderTests~partial.swiftmodule"
+  },
+  "/Users/aidenjia/Documents/pocketsynth/Packages/PocketSynthKit/Tests/SynthDSPTests/Phase3RenderTests.swift" : {
+    "const-values" : "/Users/aidenjia/Documents/pocketsynth/Packages/PocketSynthKit/.build/out/Intermediates.noindex/PocketSynthKit.build/Debug/SynthDSPTests-p.build/Objects-normal/arm64/Phase3RenderTests.swiftconstvalues",
+    "dependencies" : "/Users/aidenjia/Documents/pocketsynth/Packages/PocketSynthKit/.build/out/Intermediates.noindex/PocketSynthKit.build/Debug/SynthDSPTests-p.build/Objects-normal/arm64/Phase3RenderTests.d",
+    "diagnostics" : "/Users/aidenjia/Documents/pocketsynth/Packages/PocketSynthKit/.build/out/Intermediates.noindex/PocketSynthKit.build/Debug/SynthDSPTests-p.build/Objects-normal/arm64/Phase3RenderTests.dia",
+    "index-unit-output-path" : "/PocketSynthKit.build/Debug/SynthDSPTests-p.build/Objects-normal/arm64/Phase3RenderTests.o",
+    "llvm-bc" : "/Users/aidenjia/Documents/pocketsynth/Packages/PocketSynthKit/.build/out/Intermediates.noindex/PocketSynthKit.build/Debug/SynthDSPTests-p.build/Objects-normal/arm64/Phase3RenderTests.bc",
+    "object" : "/Users/aidenjia/Documents/pocketsynth/Packages/PocketSynthKit/.build/out/Intermediates.noindex/PocketSynthKit.build/Debug/SynthDSPTests-p.build/Objects-normal/arm64/Phase3RenderTests.o",
+    "swift-dependencies" : "/Users/aidenjia/Documents/pocketsynth/Packages/PocketSynthKit/.build/out/Intermediates.noindex/PocketSynthKit.build/Debug/SynthDSPTests-p.build/Objects-normal/arm64/Phase3RenderTests.swiftdeps",
+    "swiftmodule" : "/Users/aidenjia/Documents/pocketsynth/Packages/PocketSynthKit/.build/out/Intermediates.noindex/PocketSynthKit.build/Debug/SynthDSPTests-p.build/Objects-normal/arm64/Phase3RenderTests~partial.swiftmodule"
+  },
+  "/Users/aidenjia/Documents/pocketsynth/Packages/PocketSynthKit/Tests/SynthDSPTests/Phase4RenderTests.swift" : {
+    "const-values" : "/Users/aidenjia/Documents/pocketsynth/Packages/PocketSynthKit/.build/out/Intermediates.noindex/PocketSynthKit.build/Debug/SynthDSPTests-p.build/Objects-normal/arm64/Phase4RenderTests.swiftconstvalues",
+    "dependencies" : "/Users/aidenjia/Documents/pocketsynth/Packages/PocketSynthKit/.build/out/Intermediates.noindex/PocketSynthKit.build/Debug/SynthDSPTests-p.build/Objects-normal/arm64/Phase4RenderTests.d",
+    "diagnostics" : "/Users/aidenjia/Documents/pocketsynth/Packages/PocketSynthKit/.build/out/Intermediates.noindex/PocketSynthKit.build/Debug/SynthDSPTests-p.build/Objects-normal/arm64/Phase4RenderTests.dia",
+    "index-unit-output-path" : "/PocketSynthKit.build/Debug/SynthDSPTests-p.build/Objects-normal/arm64/Phase4RenderTests.o",
+    "llvm-bc" : "/Users/aidenjia/Documents/pocketsynth/Packages/PocketSynthKit/.build/out/Intermediates.noindex/PocketSynthKit.build/Debug/SynthDSPTests-p.build/Objects-normal/arm64/Phase4RenderTests.bc",
+    "object" : "/Users/aidenjia/Documents/pocketsynth/Packages/PocketSynthKit/.build/out/Intermediates.noindex/PocketSynthKit.build/Debug/SynthDSPTests-p.build/Objects-normal/arm64/Phase4RenderTests.o",
+    "swift-dependencies" : "/Users/aidenjia/Documents/pocketsynth/Packages/PocketSynthKit/.build/out/Intermediates.noindex/PocketSynthKit.build/Debug/SynthDSPTests-p.build/Objects-normal/arm64/Phase4RenderTests.swiftdeps",
+    "swiftmodule" : "/Users/aidenjia/Documents/pocketsynth/Packages/PocketSynthKit/.build/out/Intermediates.noindex/PocketSynthKit.build/Debug/SynthDSPTests-p.build/Objects-normal/arm64/Phase4RenderTests~partial.swiftmodule"
+  }
+}

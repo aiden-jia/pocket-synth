@@ -1,0 +1,59 @@
+{
+  "" : {
+    "diagnostics" : "/Users/aidenjia/Documents/pocketsynth/Packages/PocketSynthKit/.build/out/Intermediates.noindex/PocketSynthKit.build/Debug/ChordTheory-t.build/Objects-normal/arm64/ChordTheory-primary.dia",
+    "emit-module-dependencies" : "/Users/aidenjia/Documents/pocketsynth/Packages/PocketSynthKit/.build/out/Intermediates.noindex/PocketSynthKit.build/Debug/ChordTheory-t.build/Objects-normal/arm64/ChordTheory-primary-emit-module.d",
+    "emit-module-diagnostics" : "/Users/aidenjia/Documents/pocketsynth/Packages/PocketSynthKit/.build/out/Intermediates.noindex/PocketSynthKit.build/Debug/ChordTheory-t.build/Objects-normal/arm64/ChordTheory-primary-emit-module.dia",
+    "pch" : "/Users/aidenjia/Documents/pocketsynth/Packages/PocketSynthKit/.build/out/Intermediates.noindex/PocketSynthKit.build/Debug/ChordTheory-t.build/Objects-normal/arm64/ChordTheory-primary-Bridging-header.pch",
+    "swift-dependencies" : "/Users/aidenjia/Documents/pocketsynth/Packages/PocketSynthKit/.build/out/Intermediates.noindex/PocketSynthKit.build/Debug/ChordTheory-t.build/Objects-normal/arm64/ChordTheory-primary.swiftdeps"
+  },
+  "/Users/aidenjia/Documents/pocketsynth/Packages/PocketSynthKit/Sources/ChordTheory/ChordType.swift" : {
+    "const-values" : "/Users/aidenjia/Documents/pocketsynth/Packages/PocketSynthKit/.build/out/Intermediates.noindex/PocketSynthKit.build/Debug/ChordTheory-t.build/Objects-normal/arm64/ChordType.swiftconstvalues",
+    "dependencies" : "/Users/aidenjia/Documents/pocketsynth/Packages/PocketSynthKit/.build/out/Intermediates.noindex/PocketSynthKit.build/Debug/ChordTheory-t.build/Objects-normal/arm64/ChordType.d",
+    "diagnostics" : "/Users/aidenjia/Documents/pocketsynth/Packages/PocketSynthKit/.build/out/Intermediates.noindex/PocketSynthKit.build/Debug/ChordTheory-t.build/Objects-normal/arm64/ChordType.dia",
+    "index-unit-output-path" : "/PocketSynthKit.build/Debug/ChordTheory-t.build/Objects-normal/arm64/ChordType.o",
+    "llvm-bc" : "/Users/aidenjia/Documents/pocketsynth/Packages/PocketSynthKit/.build/out/Intermediates.noindex/PocketSynthKit.build/Debug/ChordTheory-t.build/Objects-normal/arm64/ChordType.bc",
+    "object" : "/Users/aidenjia/Documents/pocketsynth/Packages/PocketSynthKit/.build/out/Intermediates.noindex/PocketSynthKit.build/Debug/ChordTheory-t.build/Objects-normal/arm64/ChordType.o",
+    "swift-dependencies" : "/Users/aidenjia/Documents/pocketsynth/Packages/PocketSynthKit/.build/out/Intermediates.noindex/PocketSynthKit.build/Debug/ChordTheory-t.build/Objects-normal/arm64/ChordType.swiftdeps",
+    "swiftmodule" : "/Users/aidenjia/Documents/pocketsynth/Packages/PocketSynthKit/.build/out/Intermediates.noindex/PocketSynthKit.build/Debug/ChordTheory-t.build/Objects-normal/arm64/ChordType~partial.swiftmodule"
+  },
+  "/Users/aidenjia/Documents/pocketsynth/Packages/PocketSynthKit/Sources/ChordTheory/Pitch.swift" : {
+    "const-values" : "/Users/aidenjia/Documents/pocketsynth/Packages/PocketSynthKit/.build/out/Intermediates.noindex/PocketSynthKit.build/Debug/ChordTheory-t.build/Objects-normal/arm64/Pitch.swiftconstvalues",
+    "dependencies" : "/Users/aidenjia/Documents/pocketsynth/Packages/PocketSynthKit/.build/out/Intermediates.noindex/PocketSynthKit.build/Debug/ChordTheory-t.build/Objects-normal/arm64/Pitch.d",
+    "diagnostics" : "/Users/aidenjia/Documents/pocketsynth/Packages/PocketSynthKit/.build/out/Intermediates.noindex/PocketSynthKit.build/Debug/ChordTheory-t.build/Objects-normal/arm64/Pitch.dia",
+    "index-unit-output-path" : "/PocketSynthKit.build/Debug/ChordTheory-t.build/Objects-normal/arm64/Pitch.o",
+    "llvm-bc" : "/Users/aidenjia/Documents/pocketsynth/Packages/PocketSynthKit/.build/out/Intermediates.noindex/PocketSynthKit.build/Debug/ChordTheory-t.build/Objects-normal/arm64/Pitch.bc",
+    "object" : "/Users/aidenjia/Documents/pocketsynth/Packages/PocketSynthKit/.build/out/Intermediates.noindex/PocketSynthKit.build/Debug/ChordTheory-t.build/Objects-normal/arm64/Pitch.o",
+    "swift-dependencies" : "/Users/aidenjia/Documents/pocketsynth/Packages/PocketSynthKit/.build/out/Intermediates.noindex/PocketSynthKit.build/Debug/ChordTheory-t.build/Objects-normal/arm64/Pitch.swiftdeps",
+    "swiftmodule" : "/Users/aidenjia/Documents/pocketsynth/Packages/PocketSynthKit/.build/out/Intermediates.noindex/PocketSynthKit.build/Debug/ChordTheory-t.build/Objects-normal/arm64/Pitch~partial.swiftmodule"
+  },
+  "/Users/aidenjia/Documents/pocketsynth/Packages/PocketSynthKit/Sources/ChordTheory/Scale.swift" : {
+    "const-values" : "/Users/aidenjia/Documents/pocketsynth/Packages/PocketSynthKit/.build/out/Intermediates.noindex/PocketSynthKit.build/Debug/ChordTheory-t.build/Objects-normal/arm64/Scale.swiftconstvalues",
+    "dependencies" : "/Users/aidenjia/Documents/pocketsynth/Packages/PocketSynthKit/.build/out/Intermediates.noindex/PocketSynthKit.build/Debug/ChordTheory-t.build/Objects-normal/arm64/Scale.d",
+    "diagnostics" : "/Users/aidenjia/Documents/pocketsynth/Packages/PocketSynthKit/.build/out/Intermediates.noindex/PocketSynthKit.build/Debug/ChordTheory-t.build/Objects-normal/arm64/Scale.dia",
+    "index-unit-output-path" : "/PocketSynthKit.build/Debug/ChordTheory-t.build/Objects-normal/arm64/Scale.o",
+    "llvm-bc" : "/Users/aidenjia/Documents/pocketsynth/Packages/PocketSynthKit/.build/out/Intermediates.noindex/PocketSynthKit.build/Debug/ChordTheory-t.build/Objects-normal/arm64/Scale.bc",
+    "object" : "/Users/aidenjia/Documents/pocketsynth/Packages/PocketSynthKit/.build/out/Intermediates.noindex/PocketSynthKit.build/Debug/ChordTheory-t.build/Objects-normal/arm64/Scale.o",
+    "swift-dependencies" : "/Users/aidenjia/Documents/pocketsynth/Packages/PocketSynthKit/.build/out/Intermediates.noindex/PocketSynthKit.build/Debug/ChordTheory-t.build/Objects-normal/arm64/Scale.swiftdeps",
+    "swiftmodule" : "/Users/aidenjia/Documents/pocketsynth/Packages/PocketSynthKit/.build/out/Intermediates.noindex/PocketSynthKit.build/Debug/ChordTheory-t.build/Objects-normal/arm64/Scale~partial.swiftmodule"
+  },
+  "/Users/aidenjia/Documents/pocketsynth/Packages/PocketSynthKit/Sources/ChordTheory/StickModifier.swift" : {
+    "const-values" : "/Users/aidenjia/Documents/pocketsynth/Packages/PocketSynthKit/.build/out/Intermediates.noindex/PocketSynthKit.build/Debug/ChordTheory-t.build/Objects-normal/arm64/StickModifier.swiftconstvalues",
+    "dependencies" : "/Users/aidenjia/Documents/pocketsynth/Packages/PocketSynthKit/.build/out/Intermediates.noindex/PocketSynthKit.build/Debug/ChordTheory-t.build/Objects-normal/arm64/StickModifier.d",
+    "diagnostics" : "/Users/aidenjia/Documents/pocketsynth/Packages/PocketSynthKit/.build/out/Intermediates.noindex/PocketSynthKit.build/Debug/ChordTheory-t.build/Objects-normal/arm64/StickModifier.dia",
+    "index-unit-output-path" : "/PocketSynthKit.build/Debug/ChordTheory-t.build/Objects-normal/arm64/StickModifier.o",
+    "llvm-bc" : "/Users/aidenjia/Documents/pocketsynth/Packages/PocketSynthKit/.build/out/Intermediates.noindex/PocketSynthKit.build/Debug/ChordTheory-t.build/Objects-normal/arm64/StickModifier.bc",
+    "object" : "/Users/aidenjia/Documents/pocketsynth/Packages/PocketSynthKit/.build/out/Intermediates.noindex/PocketSynthKit.build/Debug/ChordTheory-t.build/Objects-normal/arm64/StickModifier.o",
+    "swift-dependencies" : "/Users/aidenjia/Documents/pocketsynth/Packages/PocketSynthKit/.build/out/Intermediates.noindex/PocketSynthKit.build/Debug/ChordTheory-t.build/Objects-normal/arm64/StickModifier.swiftdeps",
+    "swiftmodule" : "/Users/aidenjia/Documents/pocketsynth/Packages/PocketSynthKit/.build/out/Intermediates.noindex/PocketSynthKit.build/Debug/ChordTheory-t.build/Objects-normal/arm64/StickModifier~partial.swiftmodule"
+  },
+  "/Users/aidenjia/Documents/pocketsynth/Packages/PocketSynthKit/Sources/ChordTheory/Voicer.swift" : {
+    "const-values" : "/Users/aidenjia/Documents/pocketsynth/Packages/PocketSynthKit/.build/out/Intermediates.noindex/PocketSynthKit.build/Debug/ChordTheory-t.build/Objects-normal/arm64/Voicer.swiftconstvalues",
+    "dependencies" : "/Users/aidenjia/Documents/pocketsynth/Packages/PocketSynthKit/.build/out/Intermediates.noindex/PocketSynthKit.build/Debug/ChordTheory-t.build/Objects-normal/arm64/Voicer.d",
+    "diagnostics" : "/Users/aidenjia/Documents/pocketsynth/Packages/PocketSynthKit/.build/out/Intermediates.noindex/PocketSynthKit.build/Debug/ChordTheory-t.build/Objects-normal/arm64/Voicer.dia",
+    "index-unit-output-path" : "/PocketSynthKit.build/Debug/ChordTheory-t.build/Objects-normal/arm64/Voicer.o",
+    "llvm-bc" : "/Users/aidenjia/Documents/pocketsynth/Packages/PocketSynthKit/.build/out/Intermediates.noindex/PocketSynthKit.build/Debug/ChordTheory-t.build/Objects-normal/arm64/Voicer.bc",
+    "object" : "/Users/aidenjia/Documents/pocketsynth/Packages/PocketSynthKit/.build/out/Intermediates.noindex/PocketSynthKit.build/Debug/ChordTheory-t.build/Objects-normal/arm64/Voicer.o",
+    "swift-dependencies" : "/Users/aidenjia/Documents/pocketsynth/Packages/PocketSynthKit/.build/out/Intermediates.noindex/PocketSynthKit.build/Debug/ChordTheory-t.build/Objects-normal/arm64/Voicer.swiftdeps",
+    "swiftmodule" : "/Users/aidenjia/Documents/pocketsynth/Packages/PocketSynthKit/.build/out/Intermediates.noindex/PocketSynthKit.build/Debug/ChordTheory-t.build/Objects-normal/arm64/Voicer~partial.swiftmodule"
+  }
+}

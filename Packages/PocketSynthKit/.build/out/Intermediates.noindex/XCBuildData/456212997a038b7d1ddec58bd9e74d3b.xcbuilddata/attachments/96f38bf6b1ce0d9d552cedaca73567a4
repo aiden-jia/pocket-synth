@@ -1,0 +1,4 @@
+module AudioEngine {
+header "AudioEngine-Swift.h"
+export *
+}

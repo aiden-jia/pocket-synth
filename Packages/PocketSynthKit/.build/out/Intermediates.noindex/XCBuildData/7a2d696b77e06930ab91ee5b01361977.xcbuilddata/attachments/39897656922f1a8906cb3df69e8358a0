@@ -1,0 +1,11 @@
+/Users/aidenjia/Documents/pocketsynth/Packages/PocketSynthKit/Sources/SynthCore/Beats.swift
+/Users/aidenjia/Documents/pocketsynth/Packages/PocketSynthKit/Sources/SynthCore/Catalog.swift
+/Users/aidenjia/Documents/pocketsynth/Packages/PocketSynthKit/Sources/SynthCore/ChordResolver.swift
+/Users/aidenjia/Documents/pocketsynth/Packages/PocketSynthKit/Sources/SynthCore/ControlEvent.swift
+/Users/aidenjia/Documents/pocketsynth/Packages/PocketSynthKit/Sources/SynthCore/Display.swift
+/Users/aidenjia/Documents/pocketsynth/Packages/PocketSynthKit/Sources/SynthCore/EngineCommand.swift
+/Users/aidenjia/Documents/pocketsynth/Packages/PocketSynthKit/Sources/SynthCore/Looper.swift
+/Users/aidenjia/Documents/pocketsynth/Packages/PocketSynthKit/Sources/SynthCore/StickQuantizer.swift
+/Users/aidenjia/Documents/pocketsynth/Packages/PocketSynthKit/Sources/SynthCore/SynthController.swift
+/Users/aidenjia/Documents/pocketsynth/Packages/PocketSynthKit/Sources/SynthCore/SynthState+Codable.swift
+/Users/aidenjia/Documents/pocketsynth/Packages/PocketSynthKit/Sources/SynthCore/SynthState.swift

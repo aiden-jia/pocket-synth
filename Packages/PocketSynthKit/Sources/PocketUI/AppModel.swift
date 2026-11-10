@@ -1,0 +1,440 @@
+import AudioEngine
+import CoreGraphics
+import DSPKit
+import Foundation
+import Observation
+import SamplerCore
+import SynthCore
+
+/// App-wide owner of the audio host, engine bridge, both panel controllers and storage.
+@MainActor
+@Observable
+public final class AppModel {
+    public enum Panel: String, CaseIterable, Identifiable, Sendable {
+        case synth = "Synth"
+        case sampler = "Sampler"
+        public var id: String { rawValue }
+    }
+
+    public var panel: Panel = .synth
+    public let synth: SynthController
+    public let sampler: SamplerController
+    /// Current joystick knob offset in points, for drawing only.
+    public var stickOffset: CGVector?
+    public private(set) var audioError: String?
+    public var importMessage: String?
+    /// Samples whose files couldn't be loaded at launch.
+    public private(set) var missingSamples: Set<SampleID> = []
+
+    @ObservationIgnored private let host: AudioHost
+    @ObservationIgnored private let bridge: EngineBridge
+    @ObservationIgnored private let store: ProjectStore
+    @ObservationIgnored private var saveTask: Task<Void, Never>?
+    @ObservationIgnored private var sessionSaveTask: Task<Void, Never>?
+    @ObservationIgnored private var detectTask: Task<Void, Never>?
+
+    // Sampling (SAMPLER_SPEC §4)
+    public var sampling = SamplingSettings()
+    public private(set) var recorderState: EngineBridge.RecorderState = .idle
+    public private(set) var recordedSeconds = 0.0
+    public private(set) var meter: Float = 0
+    public private(set) var samplingError: String?
+
+    // Sample Edit
+    public private(set) var chop: ChopSession?
+    public private(set) var busy: String?
+
+    var sessionURL: URL { store.directory.appendingPathComponent("synth.json") }
+
+    public init(store: ProjectStore = .defaultStore()) {
+        self.store = store
+        host = AudioHost()
+        let sampleRate = host.prepareSession()
+        bridge = EngineBridge(sampleRate: sampleRate)
+        let session = SynthSession.load(from: store.directory.appendingPathComponent("synth.json"))
+        synth = SynthController(state: session?.state ?? SynthState(),
+                                presets: session?.presets ?? Array(repeating: nil, count: 4))
+        sampler = SamplerController(project: store.load() ?? SamplerProject())
+
+        let bridge = self.bridge
+        synth.send = { bridge.apply($0) }
+        sampler.send = { bridge.apply($0) }
+        synth.start()
+        loadProjectSamples()
+        sampler.start()
+        sampler.onChange = { [weak self] in self?.scheduleSave($0) }
+        synth.onSessionChange = { [weak self] in self?.scheduleSessionSave($0) }
+
+        do {
+            try host.start(rendering: bridge.engine)
+        } catch {
+            audioError = "Audio failed to start: \(error.localizedDescription)"
+        }
+    }
+
+    /// Same clock as `UITouch.timestamp` (seconds since boot).
+    public static var now: Double { ProcessInfo.processInfo.systemUptime }
+
+    public func handle(_ event: ControlEvent, at time: Double = AppModel.now) {
+        synth.handle(event, at: time)
+    }
+
+    /// Called ~30×/s: engine telemetry (recorded hits, playheads) and housekeeping.
+    public func frame() {
+        sampler.poll(hits: bridge.pollRecorded(), position: bridge.transportTicks,
+                     enginePlaying: bridge.transportPlaying)
+        let step = synth.seqPlaying ? bridge.chordSequencePosition : nil
+        if synth.seqPlayhead != step { synth.seqPlayhead = step }
+        synth.updateLooper(bridge.looperReports, length: bridge.looperLength, position: bridge.looperPosition)
+        synth.tick(at: Self.now)
+        pollRecorder()
+        bridge.collectGarbage()
+    }
+
+    // MARK: Transport (shared by both panels)
+
+    public var bpm: Double { synth.state.bpm }
+
+    public func setBPM(_ bpm: Double) { synth.setTempo(bpm) }
+
+    @ObservationIgnored private var taps: [Double] = []
+
+    /// Tap tempo: the average of the last few taps (a 2 s pause starts over).
+    public func tapTempo(at time: Double = AppModel.now) {
+        if let last = taps.last, time - last > 2 { taps.removeAll() }
+        taps.append(time)
+        taps = Array(taps.suffix(5))
+        guard taps.count >= 2 else { return }
+        let interval = (taps.last! - taps.first!) / Double(taps.count - 1)
+        setBPM(60 / interval)
+    }
+
+    /// Position as "bar.beat" (1-based); count-in shows as "-1.4" etc.
+    public var positionText: String {
+        let t = sampler.transport.position
+        let bpb = sampler.sequence.beatsPerBar
+        let beat = Int((t / Double(PPQN.ticks)).rounded(.down))
+        if t < 0 { return "IN \(-beat)" }
+        return "\(beat / bpb + 1).\(beat % bpb + 1)"
+    }
+
+    // MARK: Samples
+
+    public func peaks(_ id: SampleID?) -> SampleLibrary.Peaks? {
+        id.flatMap { bridge.samples.peaks[$0] }
+    }
+
+    /// Copies files into the project, decodes them and auto-assigns them to pads.
+    public func importSamples(_ urls: [URL]) {
+        var infos: [SampleInfo] = []
+        var failures: [String] = []
+        for url in urls {
+            let scoped = url.startAccessingSecurityScopedResource()
+            defer { if scoped { url.stopAccessingSecurityScopedResource() } }
+            let id = SampleID()
+            var dest: URL?
+            do {
+                dest = try store.importFile(url, id: id)
+                let meta = try bridge.samples.load(id: id, from: dest!)
+                infos.append(SampleInfo(id: id, name: url.deletingPathExtension().lastPathComponent,
+                                        fileName: dest!.lastPathComponent, frames: meta.frames,
+                                        sampleRate: meta.sampleRate, channels: meta.channels))
+            } catch {
+                if let dest { try? FileManager.default.removeItem(at: dest) }
+                failures.append("\(url.lastPathComponent): \(error.localizedDescription)")
+            }
+        }
+        let pads = sampler.addSamples(infos)
+        var message = ""
+        if !infos.isEmpty {
+            message = "Imported \(infos.count) sample\(infos.count == 1 ? "" : "s")"
+            if let first = pads.first { message += " → \(PadAddress.name(first))…" }
+        }
+        if !failures.isEmpty { message += (message.isEmpty ? "" : "\n") + "Couldn't import:\n" + failures.joined(separator: "\n") }
+        importMessage = message.isEmpty ? nil : message
+    }
+
+    public func deleteSample(_ id: SampleID) {
+        guard let info = sampler.project.sample(id) else { return }
+        sampler.removeSample(id)
+        bridge.samples.unload(id)
+        store.deleteFile(for: info)
+        missingSamples.remove(id)
+    }
+
+    private func loadProjectSamples() {
+        for info in sampler.project.samples {
+            do {
+                try bridge.samples.load(id: info.id, from: store.url(for: info))
+            } catch {
+                missingSamples.insert(info.id)
+            }
+        }
+    }
+
+    private func scheduleSessionSave(_ session: SynthSession) {
+        sessionSaveTask?.cancel()
+        let url = sessionURL
+        sessionSaveTask = Task {
+            try? await Task.sleep(for: .seconds(1))
+            guard !Task.isCancelled else { return }
+            try? session.save(to: url)
+        }
+    }
+
+    // MARK: Generated samples
+
+    /// Writes audio into the project's Samples folder and loads it. The caller adds it.
+    private func addGenerated(_ audio: AudioData, name: String) throws -> SampleInfo {
+        try store.prepare()
+        let id = SampleID()
+        let url = store.samplesDirectory.appendingPathComponent("\(id.rawValue).wav")
+        try SampleLibrary.writeWAV(audio.channels, sampleRate: audio.sampleRate, to: url)
+        let m = try bridge.samples.load(id: id, from: url)
+        return SampleInfo(id: id, name: name, fileName: url.lastPathComponent, frames: m.frames,
+                          sampleRate: m.sampleRate, channels: m.channels)
+    }
+
+    private func uniqueName(_ base: String) -> String {
+        let names = Set(sampler.project.samples.map(\.name))
+        var n = 1
+        while names.contains("\(base) \(n)") { n += 1 }
+        return "\(base) \(n)"
+    }
+
+    private func audioData(_ id: SampleID) -> AudioData? {
+        bridge.samples.audio(for: id).map { AudioData(channels: $0.channels, sampleRate: $0.sampleRate) }
+    }
+
+    // MARK: Looper → sampler
+
+    /// Copies a finished loop into the sample pool and onto the selected pad.
+    public func sendLoopToSampler(track: Int) {
+        guard let a = bridge.loopAudio(track: track) else {
+            importMessage = "Loop \(track + 1) has no audio yet."
+            return
+        }
+        do {
+            let info = try addGenerated(AudioData(channels: a.channels, sampleRate: a.sampleRate),
+                                        name: uniqueName("Loop"))
+            let pads = sampler.addSamples([info])
+            importMessage = "\(info.name) → \(pads.first.map(PadAddress.name) ?? "pool")"
+        } catch {
+            importMessage = "Couldn't save the loop: \(error.localizedDescription)"
+        }
+    }
+
+    // MARK: Sampling
+
+    /// Changes the source; the mic is only switched on while it's the source.
+    public func setSamplingSource(_ source: SamplingSource) async {
+        sampling.source = source
+        samplingError = nil
+        if source == .input {
+            let bridge = self.bridge
+            let ok = await host.enableInput { l, r, n in bridge.pushInput(l, r, frames: n) }
+            if !ok { samplingError = "Microphone access is off. Turn it on in Settings › PocketSynth." }
+        } else {
+            host.disableInput()
+        }
+        bridge.setMeterSource(source.engineSource)
+    }
+
+    public func armSampling() {
+        guard recorderState == .idle || recorderState == .done else { return }
+        let threshold: Float = sampling.useThreshold ? .gain(dB: Float(sampling.thresholdDB)) : 0
+        let preRoll = Int(sampling.preRollMs / 1000 * bridge.sampleRate)
+        bridge.armRecorder(source: sampling.source.engineSource, threshold: threshold,
+                           preRollFrames: preRoll, maxSeconds: sampling.maxSeconds)
+        recorderState = sampling.useThreshold ? .armed : .recording
+    }
+
+    public func stopSampling() { bridge.stopRecorder() }
+
+    public func cancelSampling() {
+        bridge.discardRecording()
+        recorderState = .idle
+    }
+
+    private func pollRecorder() {
+        let st = bridge.recorderState
+        let level = bridge.recorderPeak
+        if abs(level - meter) > 0.005 { meter = level }
+        let secs = (Double(bridge.recorderFrames) / bridge.sampleRate * 10).rounded() / 10
+        if secs != recordedSeconds { recordedSeconds = secs }
+        // The engine only reports DONE once; finish the take then.
+        if st == .done, recorderState == .armed || recorderState == .recording { finishTake() }
+        else if st != recorderState, st != .done, st != .idle { recorderState = st }
+    }
+
+    private func finishTake() {
+        recorderState = .done
+        guard let take = bridge.takeRecording() else {
+            recorderState = .idle
+            return
+        }
+        // Mic takes carry the input's own rate.
+        let rate = sampling.source == .input ? host.inputSampleRate : take.sampleRate
+        var audio = AudioData(channels: sampling.stereo ? take.channels : [take.channels[0]], sampleRate: rate)
+        if sampling.trimSilence { audio = audio.applying(.trimSilence(thresholdDB: -50)) }
+        do {
+            let info = try addGenerated(audio, name: uniqueName(sampling.source == .input ? "Sample" : "Resample"))
+            let pads = sampler.addSamples([info])
+            importMessage = "\(info.name) (\(String(format: "%.1f", info.duration)) s) → \(pads.first.map(PadAddress.name) ?? "pool")"
+            if sampling.openEditAfter, let p = pads.first {
+                sampler.selectedPad = p
+                sampler.editMode = .trim
+                sampler.view = .edit
+            }
+        } catch {
+            importMessage = "Couldn't save the take: \(error.localizedDescription)"
+        }
+        recorderState = .idle
+    }
+
+    // MARK: Chop
+
+    public func startChop() {
+        guard let id = sampler.selected.primarySample, let info = sampler.project.sample(id) else {
+            chop = nil
+            return
+        }
+        if chop?.sample == id { return }
+        var c = ChopSession(sample: id, frames: info.frames, sampleRate: info.sampleRate)
+        c.bpm = bpm
+        chop = c
+        rechop()
+    }
+
+    public func updateChop(_ body: (inout ChopSession) -> Void) {
+        guard var c = chop else { return }
+        let before = c
+        body(&c)
+        chop = c
+        if c.method != before.method || c.sensitivity != before.sensitivity || c.minLengthMs != before.minLengthMs
+            || c.regionCount != before.regionCount || c.bpm != before.bpm || c.division != before.division {
+            rechop()
+        }
+    }
+
+    /// Recomputes markers for the current method (threshold detection runs off the main thread).
+    private func rechop() {
+        guard let c = chop else { return }
+        detectTask?.cancel()
+        switch c.method {
+        case .manual:
+            break
+        case .regions:
+            chop?.setMarkers(Slicing.regions(frames: c.frames, count: c.regionCount))
+        case .beats:
+            chop?.setMarkers(Slicing.grid(frames: c.frames, sampleRate: c.sampleRate, bpm: c.bpm, beats: c.division.beats))
+        case .threshold:
+            guard let audio = audioData(c.sample) else { return }
+            let sens = c.sensitivity, minLen = c.minLengthFrames, id = c.sample
+            detectTask = Task {
+                try? await Task.sleep(for: .milliseconds(120)) // slider debounce
+                guard !Task.isCancelled else { return }
+                let markers = await Task.detached { Analysis.onsets(audio, sensitivity: sens, minLength: minLen) }.value
+                guard !Task.isCancelled, self.chop?.sample == id, self.chop?.method == .threshold else { return }
+                self.chop?.setMarkers(markers)
+            }
+        }
+    }
+
+    public func detectChopBPM() {
+        guard let c = chop, let audio = audioData(c.sample) else { return }
+        busy = "Detecting tempo…"
+        Task {
+            let found = await Task.detached { Analysis.bpm(audio) }.value
+            busy = nil
+            if let found { updateChop { $0.bpm = found } } else { importMessage = "No steady tempo found." }
+        }
+    }
+
+    public func previewSlice(_ i: Int) {
+        guard let c = chop, c.slices.indices.contains(i) else { return }
+        bridge.preview(c.sample, range: c.slices[i])
+    }
+
+    public func previewSlice(atFrame frame: Int) {
+        guard let i = chop?.slice(containing: frame) else { return }
+        chop?.selected = i
+        previewSlice(i)
+    }
+
+    /// Convert (SAMPLER_SPEC §5.2): slice 1 goes on pad 1 of the first empty bank (so the
+    /// pads you already have stay), or of the current bank when every bank is in use.
+    public func convertChop(_ conversion: ChopConversion) {
+        guard let c = chop, let info = sampler.project.sample(c.sample) else { return }
+        let bank = sampler.firstEmptyBank(from: sampler.bank) ?? sampler.bank
+        let start = PadAddress.pad(bank: bank, gridIndex: 0)
+        sampler.bank = bank
+        let slices = c.slices
+        switch conversion {
+        case .pads:
+            let pads = sampler.assignSlices(slices, of: c.sample, startPad: start)
+            importMessage = "\(pads.count) slices → \(PadAddress.name(start))…"
+        case .sequence:
+            let pads = sampler.convertToSliceSequence(slices, of: c.sample, startPad: start,
+                                                      sampleRate: c.sampleRate, bpm: c.bpm)
+            if abs(c.bpm - bpm) > 0.01 { setBPM(c.bpm) }
+            importMessage = "\(pads.count) slices → pads + \(sampler.sequence.name) at \(Int(c.bpm.rounded())) BPM"
+        case .samples:
+            guard let audio = audioData(c.sample) else { return }
+            do {
+                let infos = try slices.prefix(DrumProgram.padCount - start).enumerated().map { i, r in
+                    try addGenerated(audio.slice(r), name: "\(info.name) \(i + 1)")
+                }
+                sampler.assignExtracted(infos, startPad: start)
+                importMessage = "\(infos.count) new samples → \(PadAddress.name(start))…"
+            } catch {
+                importMessage = "Couldn't extract slices: \(error.localizedDescription)"
+            }
+        }
+    }
+
+    // MARK: Processes (SAMPLER_SPEC §5.3)
+
+    /// Runs a destructive process on the selected pad's sample. The result is a new
+    /// version; the old one stays (archived) so undo works.
+    public func applyProcess(_ make: @escaping @Sendable (AudioData, Range<Int>) -> SampleProcess) {
+        let pad = sampler.selected
+        guard let id = pad.primarySample, let info = sampler.project.sample(id), let audio = audioData(id) else { return }
+        let range = pad.layers[0].start..<(pad.layers[0].end ?? info.frames)
+        let process = make(audio, range)
+        busy = "\(process.label)…"
+        Task {
+            let result = await Task.detached { audio.applying(process) }.value
+            busy = nil
+            guard result.frames > 1 else { importMessage = "Nothing left after \(process.label.lowercased())."; return }
+            do {
+                let new = try addGenerated(result, name: info.name)
+                sampler.replaceSample(id, with: new, label: process.label)
+            } catch {
+                importMessage = "\(process.label) failed: \(error.localizedDescription)"
+            }
+        }
+    }
+
+    /// Deletes archived sample versions nothing uses any more.
+    public func discardUnusedAudio() {
+        let gone = sampler.discardUnused()
+        for info in gone {
+            bridge.samples.unload(info.id)
+            store.deleteFile(for: info)
+        }
+        importMessage = gone.isEmpty ? "Nothing to discard." : "Discarded \(gone.count) unused version\(gone.count == 1 ? "" : "s")."
+    }
+
+    public func previewSelectedPad() { sampler.audition() }
+
+    private func scheduleSave(_ project: SamplerProject) {
+        saveTask?.cancel()
+        let store = self.store
+        saveTask = Task {
+            try? await Task.sleep(for: .milliseconds(800))
+            guard !Task.isCancelled else { return }
+            try? store.save(project)
+        }
+    }
+}

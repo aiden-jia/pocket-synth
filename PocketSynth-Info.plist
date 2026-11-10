@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- Show Documents/PocketSynth (samples, project.json) in the Files app. -->
+	<key>UIFileSharingEnabled</key>
+	<true/>
+	<key>LSSupportsOpeningDocumentsInPlace</key>
+	<true/>
+	<!-- Sampler mode records from the microphone (only while sampling). -->
+	<key>NSMicrophoneUsageDescription</key>
+	<string>PocketSynth records from the microphone when you sample.</string>
+</dict>
+</plist>

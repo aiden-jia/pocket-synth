@@ -1,0 +1,4 @@
+module SamplerCore {
+header "SamplerCore-Swift.h"
+export *
+}

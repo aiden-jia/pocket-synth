@@ -1,0 +1,4 @@
+module SynthCore {
+header "SynthCore-Swift.h"
+export *
+}

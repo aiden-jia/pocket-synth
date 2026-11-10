@@ -1,0 +1,4 @@
+module SynthDSP {
+umbrella header "/Users/aidenjia/Documents/pocketsynth/Packages/PocketSynthKit/Sources/SynthDSP/include/SynthDSP.h"
+export *
+}

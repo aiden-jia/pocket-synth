@@ -1,0 +1,129 @@
+{
+  "" : {
+    "diagnostics" : "/Users/aidenjia/Documents/pocketsynth/Packages/PocketSynthKit/.build/out/Intermediates.noindex/PocketSynthKit.build/Debug/PocketUI-t.build/Objects-normal/arm64/PocketUI-primary.dia",
+    "emit-module-dependencies" : "/Users/aidenjia/Documents/pocketsynth/Packages/PocketSynthKit/.build/out/Intermediates.noindex/PocketSynthKit.build/Debug/PocketUI-t.build/Objects-normal/arm64/PocketUI-primary-emit-module.d",
+    "emit-module-diagnostics" : "/Users/aidenjia/Documents/pocketsynth/Packages/PocketSynthKit/.build/out/Intermediates.noindex/PocketSynthKit.build/Debug/PocketUI-t.build/Objects-normal/arm64/PocketUI-primary-emit-module.dia",
+    "pch" : "/Users/aidenjia/Documents/pocketsynth/Packages/PocketSynthKit/.build/out/Intermediates.noindex/PocketSynthKit.build/Debug/PocketUI-t.build/Objects-normal/arm64/PocketUI-primary-Bridging-header.pch",
+    "swift-dependencies" : "/Users/aidenjia/Documents/pocketsynth/Packages/PocketSynthKit/.build/out/Intermediates.noindex/PocketSynthKit.build/Debug/PocketUI-t.build/Objects-normal/arm64/PocketUI-primary.swiftdeps"
+  },
+  "/Users/aidenjia/Documents/pocketsynth/Packages/PocketSynthKit/Sources/PocketUI/AppModel.swift" : {
+    "const-values" : "/Users/aidenjia/Documents/pocketsynth/Packages/PocketSynthKit/.build/out/Intermediates.noindex/PocketSynthKit.build/Debug/PocketUI-t.build/Objects-normal/arm64/AppModel.swiftconstvalues",
+    "dependencies" : "/Users/aidenjia/Documents/pocketsynth/Packages/PocketSynthKit/.build/out/Intermediates.noindex/PocketSynthKit.build/Debug/PocketUI-t.build/Objects-normal/arm64/AppModel.d",
+    "diagnostics" : "/Users/aidenjia/Documents/pocketsynth/Packages/PocketSynthKit/.build/out/Intermediates.noindex/PocketSynthKit.build/Debug/PocketUI-t.build/Objects-normal/arm64/AppModel.dia",
+    "index-unit-output-path" : "/PocketSynthKit.build/Debug/PocketUI-t.build/Objects-normal/arm64/AppModel.o",
+    "llvm-bc" : "/Users/aidenjia/Documents/pocketsynth/Packages/PocketSynthKit/.build/out/Intermediates.noindex/PocketSynthKit.build/Debug/PocketUI-t.build/Objects-normal/arm64/AppModel.bc",
+    "object" : "/Users/aidenjia/Documents/pocketsynth/Packages/PocketSynthKit/.build/out/Intermediates.noindex/PocketSynthKit.build/Debug/PocketUI-t.build/Objects-normal/arm64/AppModel.o",
+    "swift-dependencies" : "/Users/aidenjia/Documents/pocketsynth/Packages/PocketSynthKit/.build/out/Intermediates.noindex/PocketSynthKit.build/Debug/PocketUI-t.build/Objects-normal/arm64/AppModel.swiftdeps",
+    "swiftmodule" : "/Users/aidenjia/Documents/pocketsynth/Packages/PocketSynthKit/.build/out/Intermediates.noindex/PocketSynthKit.build/Debug/PocketUI-t.build/Objects-normal/arm64/AppModel~partial.swiftmodule"
+  },
+  "/Users/aidenjia/Documents/pocketsynth/Packages/PocketSynthKit/Sources/PocketUI/GridEditorView.swift" : {
+    "const-values" : "/Users/aidenjia/Documents/pocketsynth/Packages/PocketSynthKit/.build/out/Intermediates.noindex/PocketSynthKit.build/Debug/PocketUI-t.build/Objects-normal/arm64/GridEditorView.swiftconstvalues",
+    "dependencies" : "/Users/aidenjia/Documents/pocketsynth/Packages/PocketSynthKit/.build/out/Intermediates.noindex/PocketSynthKit.build/Debug/PocketUI-t.build/Objects-normal/arm64/GridEditorView.d",
+    "diagnostics" : "/Users/aidenjia/Documents/pocketsynth/Packages/PocketSynthKit/.build/out/Intermediates.noindex/PocketSynthKit.build/Debug/PocketUI-t.build/Objects-normal/arm64/GridEditorView.dia",
+    "index-unit-output-path" : "/PocketSynthKit.build/Debug/PocketUI-t.build/Objects-normal/arm64/GridEditorView.o",
+    "llvm-bc" : "/Users/aidenjia/Documents/pocketsynth/Packages/PocketSynthKit/.build/out/Intermediates.noindex/PocketSynthKit.build/Debug/PocketUI-t.build/Objects-normal/arm64/GridEditorView.bc",
+    "object" : "/Users/aidenjia/Documents/pocketsynth/Packages/PocketSynthKit/.build/out/Intermediates.noindex/PocketSynthKit.build/Debug/PocketUI-t.build/Objects-normal/arm64/GridEditorView.o",
+    "swift-dependencies" : "/Users/aidenjia/Documents/pocketsynth/Packages/PocketSynthKit/.build/out/Intermediates.noindex/PocketSynthKit.build/Debug/PocketUI-t.build/Objects-normal/arm64/GridEditorView.swiftdeps",
+    "swiftmodule" : "/Users/aidenjia/Documents/pocketsynth/Packages/PocketSynthKit/.build/out/Intermediates.noindex/PocketSynthKit.build/Debug/PocketUI-t.build/Objects-normal/arm64/GridEditorView~partial.swiftmodule"
+  },
+  "/Users/aidenjia/Documents/pocketsynth/Packages/PocketSynthKit/Sources/PocketUI/RootView.swift" : {
+    "const-values" : "/Users/aidenjia/Documents/pocketsynth/Packages/PocketSynthKit/.build/out/Intermediates.noindex/PocketSynthKit.build/Debug/PocketUI-t.build/Objects-normal/arm64/RootView.swiftconstvalues",
+    "dependencies" : "/Users/aidenjia/Documents/pocketsynth/Packages/PocketSynthKit/.build/out/Intermediates.noindex/PocketSynthKit.build/Debug/PocketUI-t.build/Objects-normal/arm64/RootView.d",
+    "diagnostics" : "/Users/aidenjia/Documents/pocketsynth/Packages/PocketSynthKit/.build/out/Intermediates.noindex/PocketSynthKit.build/Debug/PocketUI-t.build/Objects-normal/arm64/RootView.dia",
+    "index-unit-output-path" : "/PocketSynthKit.build/Debug/PocketUI-t.build/Objects-normal/arm64/RootView.o",
+    "llvm-bc" : "/Users/aidenjia/Documents/pocketsynth/Packages/PocketSynthKit/.build/out/Intermediates.noindex/PocketSynthKit.build/Debug/PocketUI-t.build/Objects-normal/arm64/RootView.bc",
+    "object" : "/Users/aidenjia/Documents/pocketsynth/Packages/PocketSynthKit/.build/out/Intermediates.noindex/PocketSynthKit.build/Debug/PocketUI-t.build/Objects-normal/arm64/RootView.o",
+    "swift-dependencies" : "/Users/aidenjia/Documents/pocketsynth/Packages/PocketSynthKit/.build/out/Intermediates.noindex/PocketSynthKit.build/Debug/PocketUI-t.build/Objects-normal/arm64/RootView.swiftdeps",
+    "swiftmodule" : "/Users/aidenjia/Documents/pocketsynth/Packages/PocketSynthKit/.build/out/Intermediates.noindex/PocketSynthKit.build/Debug/PocketUI-t.build/Objects-normal/arm64/RootView~partial.swiftmodule"
+  },
+  "/Users/aidenjia/Documents/pocketsynth/Packages/PocketSynthKit/Sources/PocketUI/SampleEditView.swift" : {
+    "const-values" : "/Users/aidenjia/Documents/pocketsynth/Packages/PocketSynthKit/.build/out/Intermediates.noindex/PocketSynthKit.build/Debug/PocketUI-t.build/Objects-normal/arm64/SampleEditView.swiftconstvalues",
+    "dependencies" : "/Users/aidenjia/Documents/pocketsynth/Packages/PocketSynthKit/.build/out/Intermediates.noindex/PocketSynthKit.build/Debug/PocketUI-t.build/Objects-normal/arm64/SampleEditView.d",
+    "diagnostics" : "/Users/aidenjia/Documents/pocketsynth/Packages/PocketSynthKit/.build/out/Intermediates.noindex/PocketSynthKit.build/Debug/PocketUI-t.build/Objects-normal/arm64/SampleEditView.dia",
+    "index-unit-output-path" : "/PocketSynthKit.build/Debug/PocketUI-t.build/Objects-normal/arm64/SampleEditView.o",
+    "llvm-bc" : "/Users/aidenjia/Documents/pocketsynth/Packages/PocketSynthKit/.build/out/Intermediates.noindex/PocketSynthKit.build/Debug/PocketUI-t.build/Objects-normal/arm64/SampleEditView.bc",
+    "object" : "/Users/aidenjia/Documents/pocketsynth/Packages/PocketSynthKit/.build/out/Intermediates.noindex/PocketSynthKit.build/Debug/PocketUI-t.build/Objects-normal/arm64/SampleEditView.o",
+    "swift-dependencies" : "/Users/aidenjia/Documents/pocketsynth/Packages/PocketSynthKit/.build/out/Intermediates.noindex/PocketSynthKit.build/Debug/PocketUI-t.build/Objects-normal/arm64/SampleEditView.swiftdeps",
+    "swiftmodule" : "/Users/aidenjia/Documents/pocketsynth/Packages/PocketSynthKit/.build/out/Intermediates.noindex/PocketSynthKit.build/Debug/PocketUI-t.build/Objects-normal/arm64/SampleEditView~partial.swiftmodule"
+  },
+  "/Users/aidenjia/Documents/pocketsynth/Packages/PocketSynthKit/Sources/PocketUI/SamplerEditors.swift" : {
+    "const-values" : "/Users/aidenjia/Documents/pocketsynth/Packages/PocketSynthKit/.build/out/Intermediates.noindex/PocketSynthKit.build/Debug/PocketUI-t.build/Objects-normal/arm64/SamplerEditors.swiftconstvalues",
+    "dependencies" : "/Users/aidenjia/Documents/pocketsynth/Packages/PocketSynthKit/.build/out/Intermediates.noindex/PocketSynthKit.build/Debug/PocketUI-t.build/Objects-normal/arm64/SamplerEditors.d",
+    "diagnostics" : "/Users/aidenjia/Documents/pocketsynth/Packages/PocketSynthKit/.build/out/Intermediates.noindex/PocketSynthKit.build/Debug/PocketUI-t.build/Objects-normal/arm64/SamplerEditors.dia",
+    "index-unit-output-path" : "/PocketSynthKit.build/Debug/PocketUI-t.build/Objects-normal/arm64/SamplerEditors.o",
+    "llvm-bc" : "/Users/aidenjia/Documents/pocketsynth/Packages/PocketSynthKit/.build/out/Intermediates.noindex/PocketSynthKit.build/Debug/PocketUI-t.build/Objects-normal/arm64/SamplerEditors.bc",
+    "object" : "/Users/aidenjia/Documents/pocketsynth/Packages/PocketSynthKit/.build/out/Intermediates.noindex/PocketSynthKit.build/Debug/PocketUI-t.build/Objects-normal/arm64/SamplerEditors.o",
+    "swift-dependencies" : "/Users/aidenjia/Documents/pocketsynth/Packages/PocketSynthKit/.build/out/Intermediates.noindex/PocketSynthKit.build/Debug/PocketUI-t.build/Objects-normal/arm64/SamplerEditors.swiftdeps",
+    "swiftmodule" : "/Users/aidenjia/Documents/pocketsynth/Packages/PocketSynthKit/.build/out/Intermediates.noindex/PocketSynthKit.build/Debug/PocketUI-t.build/Objects-normal/arm64/SamplerEditors~partial.swiftmodule"
+  },
+  "/Users/aidenjia/Documents/pocketsynth/Packages/PocketSynthKit/Sources/PocketUI/SamplerPads.swift" : {
+    "const-values" : "/Users/aidenjia/Documents/pocketsynth/Packages/PocketSynthKit/.build/out/Intermediates.noindex/PocketSynthKit.build/Debug/PocketUI-t.build/Objects-normal/arm64/SamplerPads.swiftconstvalues",
+    "dependencies" : "/Users/aidenjia/Documents/pocketsynth/Packages/PocketSynthKit/.build/out/Intermediates.noindex/PocketSynthKit.build/Debug/PocketUI-t.build/Objects-normal/arm64/SamplerPads.d",
+    "diagnostics" : "/Users/aidenjia/Documents/pocketsynth/Packages/PocketSynthKit/.build/out/Intermediates.noindex/PocketSynthKit.build/Debug/PocketUI-t.build/Objects-normal/arm64/SamplerPads.dia",
+    "index-unit-output-path" : "/PocketSynthKit.build/Debug/PocketUI-t.build/Objects-normal/arm64/SamplerPads.o",
+    "llvm-bc" : "/Users/aidenjia/Documents/pocketsynth/Packages/PocketSynthKit/.build/out/Intermediates.noindex/PocketSynthKit.build/Debug/PocketUI-t.build/Objects-normal/arm64/SamplerPads.bc",
+    "object" : "/Users/aidenjia/Documents/pocketsynth/Packages/PocketSynthKit/.build/out/Intermediates.noindex/PocketSynthKit.build/Debug/PocketUI-t.build/Objects-normal/arm64/SamplerPads.o",
+    "swift-dependencies" : "/Users/aidenjia/Documents/pocketsynth/Packages/PocketSynthKit/.build/out/Intermediates.noindex/PocketSynthKit.build/Debug/PocketUI-t.build/Objects-normal/arm64/SamplerPads.swiftdeps",
+    "swiftmodule" : "/Users/aidenjia/Documents/pocketsynth/Packages/PocketSynthKit/.build/out/Intermediates.noindex/PocketSynthKit.build/Debug/PocketUI-t.build/Objects-normal/arm64/SamplerPads~partial.swiftmodule"
+  },
+  "/Users/aidenjia/Documents/pocketsynth/Packages/PocketSynthKit/Sources/PocketUI/SamplerPanelView.swift" : {
+    "const-values" : "/Users/aidenjia/Documents/pocketsynth/Packages/PocketSynthKit/.build/out/Intermediates.noindex/PocketSynthKit.build/Debug/PocketUI-t.build/Objects-normal/arm64/SamplerPanelView.swiftconstvalues",
+    "dependencies" : "/Users/aidenjia/Documents/pocketsynth/Packages/PocketSynthKit/.build/out/Intermediates.noindex/PocketSynthKit.build/Debug/PocketUI-t.build/Objects-normal/arm64/SamplerPanelView.d",
+    "diagnostics" : "/Users/aidenjia/Documents/pocketsynth/Packages/PocketSynthKit/.build/out/Intermediates.noindex/PocketSynthKit.build/Debug/PocketUI-t.build/Objects-normal/arm64/SamplerPanelView.dia",
+    "index-unit-output-path" : "/PocketSynthKit.build/Debug/PocketUI-t.build/Objects-normal/arm64/SamplerPanelView.o",
+    "llvm-bc" : "/Users/aidenjia/Documents/pocketsynth/Packages/PocketSynthKit/.build/out/Intermediates.noindex/PocketSynthKit.build/Debug/PocketUI-t.build/Objects-normal/arm64/SamplerPanelView.bc",
+    "object" : "/Users/aidenjia/Documents/pocketsynth/Packages/PocketSynthKit/.build/out/Intermediates.noindex/PocketSynthKit.build/Debug/PocketUI-t.build/Objects-normal/arm64/SamplerPanelView.o",
+    "swift-dependencies" : "/Users/aidenjia/Documents/pocketsynth/Packages/PocketSynthKit/.build/out/Intermediates.noindex/PocketSynthKit.build/Debug/PocketUI-t.build/Objects-normal/arm64/SamplerPanelView.swiftdeps",
+    "swiftmodule" : "/Users/aidenjia/Documents/pocketsynth/Packages/PocketSynthKit/.build/out/Intermediates.noindex/PocketSynthKit.build/Debug/PocketUI-t.build/Objects-normal/arm64/SamplerPanelView~partial.swiftmodule"
+  },
+  "/Users/aidenjia/Documents/pocketsynth/Packages/PocketSynthKit/Sources/PocketUI/SamplingSettings.swift" : {
+    "const-values" : "/Users/aidenjia/Documents/pocketsynth/Packages/PocketSynthKit/.build/out/Intermediates.noindex/PocketSynthKit.build/Debug/PocketUI-t.build/Objects-normal/arm64/SamplingSettings.swiftconstvalues",
+    "dependencies" : "/Users/aidenjia/Documents/pocketsynth/Packages/PocketSynthKit/.build/out/Intermediates.noindex/PocketSynthKit.build/Debug/PocketUI-t.build/Objects-normal/arm64/SamplingSettings.d",
+    "diagnostics" : "/Users/aidenjia/Documents/pocketsynth/Packages/PocketSynthKit/.build/out/Intermediates.noindex/PocketSynthKit.build/Debug/PocketUI-t.build/Objects-normal/arm64/SamplingSettings.dia",
+    "index-unit-output-path" : "/PocketSynthKit.build/Debug/PocketUI-t.build/Objects-normal/arm64/SamplingSettings.o",
+    "llvm-bc" : "/Users/aidenjia/Documents/pocketsynth/Packages/PocketSynthKit/.build/out/Intermediates.noindex/PocketSynthKit.build/Debug/PocketUI-t.build/Objects-normal/arm64/SamplingSettings.bc",
+    "object" : "/Users/aidenjia/Documents/pocketsynth/Packages/PocketSynthKit/.build/out/Intermediates.noindex/PocketSynthKit.build/Debug/PocketUI-t.build/Objects-normal/arm64/SamplingSettings.o",
+    "swift-dependencies" : "/Users/aidenjia/Documents/pocketsynth/Packages/PocketSynthKit/.build/out/Intermediates.noindex/PocketSynthKit.build/Debug/PocketUI-t.build/Objects-normal/arm64/SamplingSettings.swiftdeps",
+    "swiftmodule" : "/Users/aidenjia/Documents/pocketsynth/Packages/PocketSynthKit/.build/out/Intermediates.noindex/PocketSynthKit.build/Debug/PocketUI-t.build/Objects-normal/arm64/SamplingSettings~partial.swiftmodule"
+  },
+  "/Users/aidenjia/Documents/pocketsynth/Packages/PocketSynthKit/Sources/PocketUI/SynthPanelView.swift" : {
+    "const-values" : "/Users/aidenjia/Documents/pocketsynth/Packages/PocketSynthKit/.build/out/Intermediates.noindex/PocketSynthKit.build/Debug/PocketUI-t.build/Objects-normal/arm64/SynthPanelView.swiftconstvalues",
+    "dependencies" : "/Users/aidenjia/Documents/pocketsynth/Packages/PocketSynthKit/.build/out/Intermediates.noindex/PocketSynthKit.build/Debug/PocketUI-t.build/Objects-normal/arm64/SynthPanelView.d",
+    "diagnostics" : "/Users/aidenjia/Documents/pocketsynth/Packages/PocketSynthKit/.build/out/Intermediates.noindex/PocketSynthKit.build/Debug/PocketUI-t.build/Objects-normal/arm64/SynthPanelView.dia",
+    "index-unit-output-path" : "/PocketSynthKit.build/Debug/PocketUI-t.build/Objects-normal/arm64/SynthPanelView.o",
+    "llvm-bc" : "/Users/aidenjia/Documents/pocketsynth/Packages/PocketSynthKit/.build/out/Intermediates.noindex/PocketSynthKit.build/Debug/PocketUI-t.build/Objects-normal/arm64/SynthPanelView.bc",
+    "object" : "/Users/aidenjia/Documents/pocketsynth/Packages/PocketSynthKit/.build/out/Intermediates.noindex/PocketSynthKit.build/Debug/PocketUI-t.build/Objects-normal/arm64/SynthPanelView.o",
+    "swift-dependencies" : "/Users/aidenjia/Documents/pocketsynth/Packages/PocketSynthKit/.build/out/Intermediates.noindex/PocketSynthKit.build/Debug/PocketUI-t.build/Objects-normal/arm64/SynthPanelView.swiftdeps",
+    "swiftmodule" : "/Users/aidenjia/Documents/pocketsynth/Packages/PocketSynthKit/.build/out/Intermediates.noindex/PocketSynthKit.build/Debug/PocketUI-t.build/Objects-normal/arm64/SynthPanelView~partial.swiftmodule"
+  },
+  "/Users/aidenjia/Documents/pocketsynth/Packages/PocketSynthKit/Sources/PocketUI/SynthSurfaceLayout.swift" : {
+    "const-values" : "/Users/aidenjia/Documents/pocketsynth/Packages/PocketSynthKit/.build/out/Intermediates.noindex/PocketSynthKit.build/Debug/PocketUI-t.build/Objects-normal/arm64/SynthSurfaceLayout.swiftconstvalues",
+    "dependencies" : "/Users/aidenjia/Documents/pocketsynth/Packages/PocketSynthKit/.build/out/Intermediates.noindex/PocketSynthKit.build/Debug/PocketUI-t.build/Objects-normal/arm64/SynthSurfaceLayout.d",
+    "diagnostics" : "/Users/aidenjia/Documents/pocketsynth/Packages/PocketSynthKit/.build/out/Intermediates.noindex/PocketSynthKit.build/Debug/PocketUI-t.build/Objects-normal/arm64/SynthSurfaceLayout.dia",
+    "index-unit-output-path" : "/PocketSynthKit.build/Debug/PocketUI-t.build/Objects-normal/arm64/SynthSurfaceLayout.o",
+    "llvm-bc" : "/Users/aidenjia/Documents/pocketsynth/Packages/PocketSynthKit/.build/out/Intermediates.noindex/PocketSynthKit.build/Debug/PocketUI-t.build/Objects-normal/arm64/SynthSurfaceLayout.bc",
+    "object" : "/Users/aidenjia/Documents/pocketsynth/Packages/PocketSynthKit/.build/out/Intermediates.noindex/PocketSynthKit.build/Debug/PocketUI-t.build/Objects-normal/arm64/SynthSurfaceLayout.o",
+    "swift-dependencies" : "/Users/aidenjia/Documents/pocketsynth/Packages/PocketSynthKit/.build/out/Intermediates.noindex/PocketSynthKit.build/Debug/PocketUI-t.build/Objects-normal/arm64/SynthSurfaceLayout.swiftdeps",
+    "swiftmodule" : "/Users/aidenjia/Documents/pocketsynth/Packages/PocketSynthKit/.build/out/Intermediates.noindex/PocketSynthKit.build/Debug/PocketUI-t.build/Objects-normal/arm64/SynthSurfaceLayout~partial.swiftmodule"
+  },
+  "/Users/aidenjia/Documents/pocketsynth/Packages/PocketSynthKit/Sources/PocketUI/SynthTouchSurface.swift" : {
+    "const-values" : "/Users/aidenjia/Documents/pocketsynth/Packages/PocketSynthKit/.build/out/Intermediates.noindex/PocketSynthKit.build/Debug/PocketUI-t.build/Objects-normal/arm64/SynthTouchSurface.swiftconstvalues",
+    "dependencies" : "/Users/aidenjia/Documents/pocketsynth/Packages/PocketSynthKit/.build/out/Intermediates.noindex/PocketSynthKit.build/Debug/PocketUI-t.build/Objects-normal/arm64/SynthTouchSurface.d",
+    "diagnostics" : "/Users/aidenjia/Documents/pocketsynth/Packages/PocketSynthKit/.build/out/Intermediates.noindex/PocketSynthKit.build/Debug/PocketUI-t.build/Objects-normal/arm64/SynthTouchSurface.dia",
+    "index-unit-output-path" : "/PocketSynthKit.build/Debug/PocketUI-t.build/Objects-normal/arm64/SynthTouchSurface.o",
+    "llvm-bc" : "/Users/aidenjia/Documents/pocketsynth/Packages/PocketSynthKit/.build/out/Intermediates.noindex/PocketSynthKit.build/Debug/PocketUI-t.build/Objects-normal/arm64/SynthTouchSurface.bc",
+    "object" : "/Users/aidenjia/Documents/pocketsynth/Packages/PocketSynthKit/.build/out/Intermediates.noindex/PocketSynthKit.build/Debug/PocketUI-t.build/Objects-normal/arm64/SynthTouchSurface.o",
+    "swift-dependencies" : "/Users/aidenjia/Documents/pocketsynth/Packages/PocketSynthKit/.build/out/Intermediates.noindex/PocketSynthKit.build/Debug/PocketUI-t.build/Objects-normal/arm64/SynthTouchSurface.swiftdeps",
+    "swiftmodule" : "/Users/aidenjia/Documents/pocketsynth/Packages/PocketSynthKit/.build/out/Intermediates.noindex/PocketSynthKit.build/Debug/PocketUI-t.build/Objects-normal/arm64/SynthTouchSurface~partial.swiftmodule"
+  },
+  "/Users/aidenjia/Documents/pocketsynth/Packages/PocketSynthKit/Sources/PocketUI/Theme.swift" : {
+    "const-values" : "/Users/aidenjia/Documents/pocketsynth/Packages/PocketSynthKit/.build/out/Intermediates.noindex/PocketSynthKit.build/Debug/PocketUI-t.build/Objects-normal/arm64/Theme.swiftconstvalues",
+    "dependencies" : "/Users/aidenjia/Documents/pocketsynth/Packages/PocketSynthKit/.build/out/Intermediates.noindex/PocketSynthKit.build/Debug/PocketUI-t.build/Objects-normal/arm64/Theme.d",
+    "diagnostics" : "/Users/aidenjia/Documents/pocketsynth/Packages/PocketSynthKit/.build/out/Intermediates.noindex/PocketSynthKit.build/Debug/PocketUI-t.build/Objects-normal/arm64/Theme.dia",
+    "index-unit-output-path" : "/PocketSynthKit.build/Debug/PocketUI-t.build/Objects-normal/arm64/Theme.o",
+    "llvm-bc" : "/Users/aidenjia/Documents/pocketsynth/Packages/PocketSynthKit/.build/out/Intermediates.noindex/PocketSynthKit.build/Debug/PocketUI-t.build/Objects-normal/arm64/Theme.bc",
+    "object" : "/Users/aidenjia/Documents/pocketsynth/Packages/PocketSynthKit/.build/out/Intermediates.noindex/PocketSynthKit.build/Debug/PocketUI-t.build/Objects-normal/arm64/Theme.o",
+    "swift-dependencies" : "/Users/aidenjia/Documents/pocketsynth/Packages/PocketSynthKit/.build/out/Intermediates.noindex/PocketSynthKit.build/Debug/PocketUI-t.build/Objects-normal/arm64/Theme.swiftdeps",
+    "swiftmodule" : "/Users/aidenjia/Documents/pocketsynth/Packages/PocketSynthKit/.build/out/Intermediates.noindex/PocketSynthKit.build/Debug/PocketUI-t.build/Objects-normal/arm64/Theme~partial.swiftmodule"
+  }
+}

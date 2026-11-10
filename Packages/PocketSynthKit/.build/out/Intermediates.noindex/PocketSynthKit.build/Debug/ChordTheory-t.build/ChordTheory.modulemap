@@ -1,0 +1,4 @@
+module ChordTheory {
+header "ChordTheory-Swift.h"
+export *
+}
