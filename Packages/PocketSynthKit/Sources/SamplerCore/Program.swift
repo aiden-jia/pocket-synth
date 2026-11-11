@@ -252,11 +252,12 @@ public struct SamplerProject: Hashable, Codable, Sendable {
     public var timingCorrect = TimingCorrect()
     public var keygroups: [KeygroupProgram] = []
     public var song = Song()
+    public var clips = ClipProgram()
 
     public init() {}
 
     enum CodingKeys: String, CodingKey {
-        case schemaVersion, samples, program, mixer, sequences, currentSequence, timingCorrect, keygroups, song
+        case schemaVersion, samples, program, mixer, sequences, currentSequence, timingCorrect, keygroups, song, clips
     }
 
     public init(from decoder: Decoder) throws {
@@ -271,6 +272,7 @@ public struct SamplerProject: Hashable, Codable, Sendable {
         timingCorrect = try c.decodeIfPresent(TimingCorrect.self, forKey: .timingCorrect) ?? TimingCorrect()
         keygroups = try c.decodeIfPresent([KeygroupProgram].self, forKey: .keygroups) ?? []
         song = try c.decodeIfPresent(Song.self, forKey: .song) ?? Song()
+        clips = try c.decodeIfPresent(ClipProgram.self, forKey: .clips) ?? ClipProgram()
         schemaVersion = Self.currentSchema
     }
 

@@ -32,8 +32,16 @@ public enum TrackProgram: Hashable, Codable, Sendable {
     case keygroup(Int)          // index into SamplerProject.keygroups
     case synth                  // the synth panel's current sound
     case midi(channel: Int)     // 1…16, external gear
+    case audio                  // plays the track's AudioClip (no events)
+    case clip                   // the clip program: events start and stop clips (pad = clip)
 
-    public var isNotes: Bool { self != .drum }
+    /// Plays MIDI notes (Pad Perform, the arpeggiator).
+    public var isNotes: Bool {
+        switch self {
+        case .keygroup, .synth, .midi: true
+        default: false
+        }
+    }
 
     /// Two or three characters for tight toolbars.
     public var shortLabel: String {
@@ -42,6 +50,8 @@ public enum TrackProgram: Hashable, Codable, Sendable {
         case .keygroup(let i): "K\(i + 1)"
         case .synth: "SY"
         case .midi(let ch): "M\(ch)"
+        case .audio: "AU"
+        case .clip: "CL"
         }
     }
 
@@ -51,6 +61,8 @@ public enum TrackProgram: Hashable, Codable, Sendable {
         case .keygroup(let i): "Keys \(i + 1)"
         case .synth: "Synth"
         case .midi(let ch): "MIDI \(ch)"
+        case .audio: "Audio"
+        case .clip: "Clips"
         }
     }
 }
@@ -64,13 +76,17 @@ public struct Track: Hashable, Codable, Sendable {
     public var solo = false
     public var program: TrackProgram = .drum
     public var automation: [AutomationLane] = []
+    /// Note tracks: the arpeggiator.
+    public var arp = TrackArp()
+    /// Audio tracks: what plays, and from where.
+    public var audio: AudioClip?
 
     public init(name: String = "Track 1", program: TrackProgram = .drum) {
         self.name = name
         self.program = program
     }
 
-    enum CodingKeys: String, CodingKey { case name, events, mute, solo, program, automation }
+    enum CodingKeys: String, CodingKey { case name, events, mute, solo, program, automation, arp, audio }
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -80,6 +96,8 @@ public struct Track: Hashable, Codable, Sendable {
         solo = try c.decodeIfPresent(Bool.self, forKey: .solo) ?? false
         program = try c.decodeIfPresent(TrackProgram.self, forKey: .program) ?? .drum
         automation = try c.decodeIfPresent([AutomationLane].self, forKey: .automation) ?? []
+        arp = try c.decodeIfPresent(TrackArp.self, forKey: .arp) ?? TrackArp()
+        audio = try c.decodeIfPresent(AudioClip.self, forKey: .audio)
     }
 }
 
@@ -215,13 +233,16 @@ public struct RecordedHit: Equatable, Sendable {
     public var tune: Double
     /// Played as a note (keygroup / synth / MIDI) rather than a drum pad.
     public var isNote: Bool
+    /// A clip start (velocity > 0) or stop; `pad` is the clip.
+    public var isClip: Bool
 
-    public init(tick: Int, pad: Int, velocity: Int, tune: Double = 0, isNote: Bool = false) {
+    public init(tick: Int, pad: Int, velocity: Int, tune: Double = 0, isNote: Bool = false, isClip: Bool = false) {
         self.tick = tick
         self.pad = pad
         self.velocity = velocity
         self.tune = tune
         self.isNote = isNote
+        self.isClip = isClip
     }
 }
 

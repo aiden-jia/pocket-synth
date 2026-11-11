@@ -9,7 +9,7 @@ struct ProgramScreen: View {
     @State private var tab = Tab.drum
     @State private var keygroup = 0
 
-    enum Tab: String, CaseIterable { case drum = "Drum pads", keys = "Keygroups" }
+    enum Tab: String, CaseIterable { case drum = "Drum pads", keys = "Keygroups", clips = "Clips" }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -22,10 +22,12 @@ struct ProgramScreen: View {
             switch tab {
             case .drum: PadEditView(model: model, sampler: sampler)
             case .keys: KeygroupEditView(model: model, sampler: sampler, index: $keygroup)
+            case .clips: ClipEditView(model: model, sampler: sampler)
             }
         }
         .onAppear {
             if case .keygroup(let i) = sampler.track.program { tab = .keys; keygroup = i }
+            if sampler.track.program == .clip { tab = .clips }
         }
     }
 }
@@ -35,6 +37,7 @@ struct KeygroupEditView: View {
     @Bindable var sampler: SamplerController
     @Binding var index: Int
     @State private var picking = false
+    @State private var autoSampling = false
 
     var body: some View {
         let kgs = sampler.project.keygroups
@@ -49,6 +52,9 @@ struct KeygroupEditView: View {
                         .tint(Theme.text)
                     }
                     Spacer()
+                    Button("Auto-sample…", systemImage: "waveform.badge.mic") { autoSampling = true }
+                        .font(.caption).buttonStyle(.bordered).tint(Theme.accent)
+                        .disabled(kgs.count >= KeygroupProgram.maxPrograms && model.autoSampling == nil)
                     Button("Auto-map samples…", systemImage: "pianokeys") { picking = true }
                         .font(.caption).buttonStyle(.bordered).tint(Theme.accent)
                         .disabled(kgs.count >= KeygroupProgram.maxPrograms)
@@ -62,6 +68,8 @@ struct KeygroupEditView: View {
             }
             .padding(14)
         }
+        .sheet(isPresented: $autoSampling) { AutoSamplerSheet(model: model) }
+        .onChange(of: kgs.count) { _, n in if n > 0 { index = n - 1 } }
         .sheet(isPresented: $picking) {
             SamplePicker(samples: sampler.visibleSamples) { ids in
                 Task {

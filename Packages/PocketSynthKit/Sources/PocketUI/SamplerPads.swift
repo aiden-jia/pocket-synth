@@ -37,13 +37,17 @@ struct PadGridView: View {
                     let pad = PadAddress.pad(bank: s.bank, gridIndex: g)
                     let p = s.project.program.pads[pad]
                     let notes = s.track.program.isNotes
+                    let clips = s.track.program == .clip
                     let stepping = s.view == .grid && s.seqEditor == .step
-                    SamplerPadView(name: stepping ? "\(g + 1)" : notes ? PitchName.noteName(s.perform.note(g)) : PadAddress.name(pad),
+                    let clipState = clips ? s.clipStates[g] : .stopped
+                    SamplerPadView(name: stepping ? "\(g + 1)" : clips ? "CLIP \(g + 1)"
+                                       : notes ? PitchName.noteName(s.perform.note(g)) : PadAddress.name(pad),
                                    sampleName: stepping ? (s.stepIsOn(g) ? "●" : nil)
+                                       : clips ? s.project.sample(s.project.clips.pads[g].sampleID)?.name
                                        : notes ? s.track.program.label : levelLabel(s, g) ?? s.project.sample(p.primarySample)?.name,
-                                   held: s.heldPads.contains(pad),
-                                   selected: s.selectedPad == pad,
-                                   velocity: s.lastVelocity[pad])
+                                   held: s.heldPads.contains(pad) || clipState == .playing,
+                                   selected: clips ? clipState == .queued || clipState == .stopping : s.selectedPad == pad,
+                                   velocity: clipState == .playing ? 70 : s.lastVelocity[pad])
                         .frame(width: layout.cells[g].width, height: layout.cells[g].height)
                         .position(x: layout.cells[g].midX, y: layout.cells[g].midY)
                 }
@@ -121,7 +125,9 @@ struct PadColumn: View {
             }
             HStack(spacing: 4) {
                 KeyButton(label: "FULL LVL", on: sampler.fullLevel, tint: Theme.warm) { sampler.fullLevel.toggle() }
-                if sampler.track.program.isNotes {
+                if sampler.track.program == .clip {
+                    KeyButton(label: "STOP CLIPS", on: false, tint: Theme.warm) { sampler.stopClips() }
+                } else if sampler.track.program.isNotes {
                     PerformMenu(sampler: sampler)
                 } else {
                 Menu {
@@ -142,6 +148,8 @@ struct PadColumn: View {
                 KeyButton(icon: "arrow.uturn.forward", on: false, tint: Theme.text, enabled: sampler.history.canRedo) { sampler.redo() }
             }
             HStack(spacing: 4) {
+                RetroKey(model: model)
+                    .frame(width: 58)
                 NoteRepeatKey(sampler: sampler)
                 Menu {
                     Picker("Rate", selection: Binding(get: { sampler.repeatRate }, set: { sampler.setRepeatRate($0) })) {

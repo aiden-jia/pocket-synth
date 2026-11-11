@@ -28,6 +28,11 @@ public enum SamplerCommand: Equatable, Sendable {
     case queueSequence(PadSequence, atBar: Bool, loop: Bool?)
     /// XY performance FX only (sent at touch rate).
     case xy(XYSettings)
+    /// The clip program changed (the bridge resolves its samples).
+    case clips(ClipProgram, beatsPerBar: Int)
+    /// A clip pad pressed (down) or let go.
+    case clipPad(Int, down: Bool)
+    case clipStopAll
 }
 
 /// How a touch on a pad becomes a velocity (SAMPLER_SPEC §2).
@@ -186,12 +191,22 @@ public final class SamplerController {
     /// Song playback: index into the song's playlist, nil when not playing the song.
     public private(set) var songIndex: Int?
     public private(set) var history = UndoHistory<SamplerProject>()
+    /// Clip pads, from engine telemetry (for the pad lights).
+    public private(set) var clipStates = [ClipState](repeating: .stopped, count: ClipProgram.count)
+    /// The clip last pressed (the step editor's lane on clip tracks).
+    public var selectedClip = 0
+    /// An audio take is recording into this track (the app runs the recorder).
+    public private(set) var audioTakeTrack: Int?
 
     @ObservationIgnored public var send: (SamplerCommand) -> Void
     /// Called after every project change (persistence hooks in here).
     @ObservationIgnored public var onChange: (SamplerProject) -> Void = { _ in }
     /// Clock for undo coalescing (seconds).
     @ObservationIgnored public var now: () -> Double = { ProcessInfo.processInfo.systemUptime }
+    /// Record on an audio track: the app starts (true) or stops (false) recording audio
+    /// into that track. The transport is already running when it's called.
+    @ObservationIgnored public var onAudioRecord: (_ start: Bool, _ track: Int) -> Void = { _, _ in }
+    @ObservationIgnored private var heldClips: Set<Int> = []
 
     @ObservationIgnored private var heldGrid: [Int: (pad: Int, tune: Double)] = [:]
     @ObservationIgnored private var heldNotes: [Int: (note: Int, program: TrackProgram)] = [:]
@@ -216,6 +231,7 @@ public final class SamplerController {
         send(.mixer(project.mixer))
         for (i, k) in project.keygroups.enumerated() { send(.keygroup(i, k)) }
         send(.beatsPerBar(project.sequence.beatsPerBar))
+        send(.clips(project.clips, beatsPerBar: project.sequence.beatsPerBar))
         send(.sequence(project.sequence))
     }
 
@@ -233,6 +249,14 @@ public final class SamplerController {
             // Step editor: the 16 pads are the 16 steps of the selected lane.
             heldPads.insert(gridPad)
             toggleStepCell(gridIndex)
+            return
+        }
+        if track.program == .clip {
+            // Clip program: the 16 pads launch clips 1–16.
+            heldPads.insert(gridPad)
+            heldClips.insert(gridIndex)
+            selectedClip = gridIndex
+            send(.clipPad(gridIndex, down: true))
             return
         }
         if track.program.isNotes {
@@ -283,6 +307,10 @@ public final class SamplerController {
     public func padUp(gridIndex: Int) {
         let gridPad = PadAddress.pad(bank: bank, gridIndex: gridIndex)
         heldPads.remove(gridPad)
+        if heldClips.remove(gridIndex) != nil {
+            send(.clipPad(gridIndex, down: false))
+            return
+        }
         if let n = heldNotes.removeValue(forKey: gridIndex) {
             send(.liveNote(n.program, note: n.note, velocity: 0))
             return
@@ -350,12 +378,19 @@ public final class SamplerController {
             endTake()
             return
         }
-        beginTake()
+        let audio = track.program == .audio
+        if !audio { beginTake() }
         if !transport.playing {
             transport.playing = true
             let countIn = transport.countInBars * project.sequence.beatsPerBar
             transport.position = Double(-countIn * PPQN.ticks)
             send(.transport(playing: true, startTick: 0, countInBeats: countIn))
+        }
+        if audio {
+            // Audio track: the app records audio; it lands on the track when the take ends.
+            audioTakeTrack = trackIndex
+            transport.recording = .replace
+            onAudioRecord(true, trackIndex)
         }
     }
 
@@ -376,6 +411,12 @@ public final class SamplerController {
     }
 
     private func endTake() {
+        if let t = audioTakeTrack {
+            audioTakeTrack = nil
+            transport.recording = nil
+            onAudioRecord(false, t)
+            return
+        }
         guard var tk = take else { return }
         var seq = project.sequence
         let t = min(takeTrack, seq.tracks.count - 1)
@@ -405,9 +446,14 @@ public final class SamplerController {
         var changed = false
         let t = min(take != nil ? takeTrack : trackIndex, seq.tracks.count - 1)
 
-        // Only hits that match the track: pad hits on drum tracks, notes on note tracks.
-        let wantNotes = seq.tracks[t].program.isNotes
-        let mine = hits.filter { $0.isNote == wantNotes }
+        // Only hits that match the track: pad hits on drum tracks, notes on note tracks,
+        // clip starts and stops on clip tracks; audio tracks take no events.
+        let program = seq.tracks[t].program
+        let mine: [RecordedHit] = switch program {
+        case .clip: hits.filter(\.isClip)
+        case .audio: []
+        default: hits.filter { !$0.isClip && $0.isNote == program.isNotes }
+        }
         if var tk = take, !mine.isEmpty {
             let tc = project.timingCorrect
             tk.ingest(mine, into: &seq, track: t, timing: tc.onInput ? tc : nil)
@@ -592,7 +638,13 @@ public final class SamplerController {
     public static let stepsPerPage = 16
 
     /// The pad (drum tracks) or note (note tracks) the step editor writes.
-    public var stepLane: Int { track.program.isNotes ? stepNote : selectedPad }
+    public var stepLane: Int {
+        switch track.program {
+        case .clip: selectedClip
+        case let p where p.isNotes: stepNote
+        default: selectedPad
+        }
+    }
 
     public var stepPages: Int {
         max(1, Int((Double(project.sequence.lengthTicks) / Double(stepTicks * Self.stepsPerPage)).rounded(.up)))
@@ -618,7 +670,102 @@ public final class SamplerController {
     /// What lane / pad `g` of the grid means on the selected track: a pad index on drum
     /// tracks, a MIDI note (from Pad Perform) on note tracks.
     public func laneValue(_ g: Int) -> Int {
-        track.program.isNotes ? perform.note(g) : PadAddress.pad(bank: bank, gridIndex: g)
+        switch track.program {
+        case .clip: g
+        case let p where p.isNotes: perform.note(g)
+        default: PadAddress.pad(bank: bank, gridIndex: g)
+        }
+    }
+
+    // MARK: - Arpeggiator, audio tracks, clips, retro (phase 6)
+
+    public func setTrackArp(_ i: Int, _ body: (inout TrackArp) -> Void) {
+        guard project.sequence.tracks.indices.contains(i) else { return }
+        editSequence("Arpeggiator", key: "arp-\(i)") { seq in
+            body(&seq.tracks[i].arp)
+            seq.tracks[i].arp.octaves = max(1, min(4, seq.tracks[i].arp.octaves))
+            seq.tracks[i].arp.gate = max(0.05, min(1, seq.tracks[i].arp.gate))
+        }
+    }
+
+    public var canAddAudioTrack: Bool {
+        project.sequence.audioSlots.count < PadSequence.maxAudioTracks && project.sequence.tracks.count < Track.maxTracks
+    }
+
+    /// Puts `sample` on audio track `i` (nil clears it).
+    public func setAudioClip(_ i: Int, _ clip: AudioClip?, label: String = "Audio") {
+        guard project.sequence.tracks.indices.contains(i), project.sequence.tracks[i].program == .audio else { return }
+        if let id = clip?.sampleID, project.sample(id) == nil { return }
+        editSequence(label, key: label == "Audio" ? "audio-\(i)" : nil) { $0.tracks[i].audio = clip }
+    }
+
+    /// A new audio track playing `info` (added to the pool if new) from `startTick`. One
+    /// undo step. Returns the track.
+    @discardableResult
+    public func addAudioTrack(_ info: SampleInfo, startTick: Int = 0, name: String? = nil) -> Int? {
+        guard canAddAudioTrack else { return nil }
+        checkpoint("New audio track")
+        if !project.samples.contains(where: { $0.id == info.id }) { project.samples.append(info) }
+        let n = project.sequence.tracks.count + 1
+        for i in project.sequences.indices where project.sequences[i].tracks.count < n {
+            project.sequences[i].tracks.append(Track(name: "Track \(n)", program: .audio))
+        }
+        var seq = project.sequence
+        seq.tracks[n - 1].name = name ?? info.name
+        seq.tracks[n - 1].audio = AudioClip(sampleID: info.id, startTick: min(startTick, seq.lengthTicks - 1))
+        project.sequence = seq
+        selectedTrack = n - 1
+        send(.sequence(project.sequence))
+        onChange(project)
+        return n - 1
+    }
+
+    /// The app finished recording an audio take for `track`: one undo step.
+    public func finishAudioTake(track i: Int, sample info: SampleInfo, startTick: Int) {
+        checkpoint("Record audio")
+        if !project.samples.contains(where: { $0.id == info.id }) { project.samples.append(info) }
+        guard project.sequence.tracks.indices.contains(i), project.sequence.tracks[i].program == .audio else { onChange(project); return }
+        var seq = project.sequence
+        seq.tracks[i].audio = AudioClip(sampleID: info.id, startTick: max(0, min(startTick, seq.lengthTicks - 1)))
+        project.sequence = seq
+        send(.sequence(seq))
+        onChange(project)
+    }
+
+    public func updateClips(key: String? = nil, _ body: (inout ClipProgram) -> Void) {
+        var c = project.clips
+        body(&c)
+        guard c != project.clips else { return }
+        checkpoint("Edit clips", key: key)
+        project.clips = c
+        send(.clips(c, beatsPerBar: project.sequence.beatsPerBar))
+        onChange(project)
+    }
+
+    public func stopClips() { send(.clipStopAll) }
+
+    /// Engine telemetry for the clip pads.
+    public func updateClipStates(_ states: [ClipState]) {
+        if states != clipStates { clipStates = states }
+    }
+
+    /// Retrospective record: turns captured playing into a new sequence and selects it.
+    /// Returns its name, or nil when there was nothing to capture.
+    @discardableResult
+    public func captureRetro(_ events: [RetroEvent], quantize: Bool) -> String? {
+        guard project.sequences.count < SamplerProject.maxSequences else { return nil }
+        let name = String(format: "Retro %02d", project.sequences.count + 1)
+        guard let seq = RetroCapture.sequence(from: events, beatsPerBar: project.sequence.beatsPerBar, name: name,
+                                              timing: quantize ? project.timingCorrect : nil) else { return nil }
+        if transport.recording != nil { endTake() }
+        checkpoint("Retro record")
+        project.sequences.append(seq)
+        project.currentSequence = project.sequences.count - 1
+        selectedTrack = 0
+        send(.beatsPerBar(seq.beatsPerBar))
+        send(.sequence(seq))
+        onChange(project)
+        return name
     }
 
     // MARK: - Parameters, automation and Q-Links
@@ -855,6 +1002,7 @@ public final class SamplerController {
         if project.keygroups != old.keygroups {
             for (i, k) in project.keygroups.enumerated() { send(.keygroup(i, k)) }
         }
+        if project.clips != old.clips { send(.clips(project.clips, beatsPerBar: project.sequence.beatsPerBar)) }
         selectedTrack = min(selectedTrack, project.sequence.tracks.count - 1)
         if project.sequence != old.sequence || project.currentSequence != old.currentSequence {
             send(.sequence(project.sequence))
@@ -869,7 +1017,27 @@ public final class SamplerController {
     /// Samples a pad or keygroup zone uses.
     public var usedSampleIDs: Set<SampleID> {
         Set(project.program.pads.flatMap { $0.layers.compactMap(\.sampleID) }
-            + project.keygroups.flatMap { $0.zones.flatMap { $0.layers.compactMap(\.sampleID) } })
+            + project.keygroups.flatMap { $0.zones.flatMap { $0.layers.compactMap(\.sampleID) } }
+            + project.clips.pads.compactMap(\.sampleID)
+            + project.sequences.flatMap { $0.tracks.compactMap { $0.audio?.sampleID } })
+    }
+
+    /// Clip pads and audio tracks that use `id`: point them at `new` (nil = clear).
+    private func replaceInClipsAndAudio(_ id: SampleID, with new: SampleID?) {
+        var c = project.clips
+        for i in c.pads.indices where c.pads[i].sampleID == id { c.pads[i].sampleID = new }
+        if c != project.clips {
+            project.clips = c
+            send(.clips(c, beatsPerBar: project.sequence.beatsPerBar))
+        }
+        var touched = false
+        for s in project.sequences.indices {
+            for t in project.sequences[s].tracks.indices where project.sequences[s].tracks[t].audio?.sampleID == id {
+                if let new { project.sequences[s].tracks[t].audio?.sampleID = new } else { project.sequences[s].tracks[t].audio = nil }
+                touched = true
+            }
+        }
+        if touched { send(.sequence(project.sequence)) }
     }
 
     /// Samples to list: everything not archived, plus archived ones a pad still uses.
@@ -985,6 +1153,7 @@ public final class SamplerController {
             }
         }
         replaceInKeygroups(old) { $0 = new.id }
+        replaceInClipsAndAudio(old, with: new.id)
         onChange(project)
     }
 
@@ -1093,6 +1262,7 @@ public final class SamplerController {
             }
         }
         replaceInKeygroups(id) { $0 = nil }
+        replaceInClipsAndAudio(id, with: nil)
         history.clear()
         onChange(project)
     }
@@ -1131,6 +1301,7 @@ public final class SamplerController {
         send(.stopAll)
         for i in project.program.pads.indices { send(.pad(i, project.program.pads[i])) }
         send(.mixer(project.mixer))
+        send(.clips(project.clips, beatsPerBar: project.sequence.beatsPerBar))
         send(.sequence(project.sequence))
     }
 }

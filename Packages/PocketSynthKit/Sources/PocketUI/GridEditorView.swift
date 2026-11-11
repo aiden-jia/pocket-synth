@@ -116,9 +116,11 @@ struct GridEditorView: View {
             ForEach(0..<16, id: \.self) { lane in
                 let pad = g.pad(forLane: lane, bank: sampler.bank)
                 let notes = sampler.track.program.isNotes
-                let name = notes ? nil : sampler.project.sample(sampler.project.program.pads[pad].primarySample)?.name
+                let clip = sampler.track.program == .clip
+                let name = notes ? nil : clip ? sampler.project.sample(sampler.project.clips.pads[pad].sampleID)?.name
+                    : sampler.project.sample(sampler.project.program.pads[pad].primarySample)?.name
                 VStack(alignment: .leading, spacing: 0) {
-                    Text(notes ? PitchName.noteName(pad) : PadAddress.name(pad))
+                    Text(notes ? PitchName.noteName(pad) : clip ? "CL\(pad + 1)" : PadAddress.name(pad))
                         .font(.system(size: 9, weight: .bold, design: .monospaced))
                     if g.laneHeight > 20, let name {
                         Text(name).font(.system(size: 8)).lineLimit(1)
@@ -209,7 +211,9 @@ struct GridEditorView: View {
 
     /// Selects a lane: the pad on drum tracks (and plays it), the note on note tracks.
     private func selectLane(_ value: Int, audition: Bool = true) {
-        if sampler.track.program.isNotes {
+        if sampler.track.program == .clip {
+            sampler.selectedClip = value
+        } else if sampler.track.program.isNotes {
             sampler.stepNote = value
         } else {
             sampler.selectedPad = value

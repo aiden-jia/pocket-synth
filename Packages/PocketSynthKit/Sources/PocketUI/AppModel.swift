@@ -45,6 +45,16 @@ public final class AppModel {
     @ObservationIgnored private var tunerSmoother = TunerSmoother()
     @ObservationIgnored private var frameCount = 0
     static let micSampleID = SampleID("synth-mic-sample")
+
+    // Retrospective record, audio-track takes, auto-sampler (phase 6, sampler)
+    @ObservationIgnored private var retro = RetroBuffer()
+    /// Hits held in the retrospective buffer (last 30 s).
+    public private(set) var retroHits = 0
+    @ObservationIgnored private var audioTake: (track: Int, startTick: Double, source: SamplingSource)?
+    /// Auto-sampler progress (takes done, total) while it runs.
+    public private(set) var autoSampling: (done: Int, total: Int)?
+    @ObservationIgnored private var autoSampleTask: Task<Void, Never>?
+    @ObservationIgnored private var autoSamplerUsesMic = false
     var micSampleURL: URL { store.directory.appendingPathComponent("mic-sample.wav") }
 
     // Sampling (SAMPLER_SPEC §4)
@@ -79,6 +89,7 @@ public final class AppModel {
         loadMicSample()
         synth.onMicRecord = { [weak self] in self?.synthMicRecord($0) }
         synth.outputLatency = host.outputLatency
+        sampler.onAudioRecord = { [weak self] start, track in self?.audioRecord(start, track: track) }
         loadProjectSamples()
         sampler.start()
         sampler.onChange = { [weak self] in self?.scheduleSave($0) }
@@ -127,6 +138,9 @@ public final class AppModel {
         }
         if midi.inputEnabled != synth.state.midiIn { midi.inputEnabled = synth.state.midiIn }
         synth.tick(at: Self.now)
+        retro.add(bridge.pollRetro(time: Self.now), now: Self.now)
+        if retro.hitCount != retroHits { retroHits = retro.hitCount }
+        sampler.updateClipStates(bridge.clipStates)
         updateMicInput()
         frameCount += 1
         if synth.state.mode == .tuner, frameCount % 3 == 0 { updateTuner() }
@@ -288,7 +302,7 @@ public final class AppModel {
 
     /// Switches the mic on while anything uses it, and off (back to playback-only) after.
     private func updateMicInput() {
-        let want = samplingUsesMic || synthWantsMic
+        let want = samplingUsesMic || synthWantsMic || autoSamplerUsesMic || audioTakeUsesMic
         guard want != micWanted else { return }
         micWanted = want
         guard want else {
@@ -308,6 +322,207 @@ public final class AppModel {
             }
             if !micWanted { host.disableInput() } // stopped needing it while asking
         }
+    }
+
+    // MARK: Retrospective record (SAMPLER_SPEC §4)
+
+    /// Turns the last 30 s of playing into a new sequence.
+    public func captureRetro(quantize: Bool) {
+        if let name = sampler.captureRetro(retro.events, quantize: quantize) {
+            let s = sampler.sequence
+            importMessage = "\(name): \(s.bars) bar\(s.bars == 1 ? "" : "s"), \(s.tracks.count) track\(s.tracks.count == 1 ? "" : "s")"
+                + (quantize ? ", quantized." : ".")
+            retro.clear()
+            retroHits = 0
+        } else {
+            importMessage = "Nothing played in the last 30 seconds."
+        }
+    }
+
+    // MARK: Audio tracks (SAMPLER_SPEC §6)
+
+    private var audioTakeUsesMic: Bool { audioTake?.source == .input }
+
+    /// A synth loop becomes a sample on a new audio track, starting at bar 1.
+    public func sendLoopToAudioTrack(track: Int) {
+        guard let a = bridge.loopAudio(track: track) else {
+            importMessage = "Loop \(track + 1) has no audio yet."
+            return
+        }
+        guard sampler.canAddAudioTrack else {
+            importMessage = "This sequence already has \(PadSequence.maxAudioTracks) audio tracks."
+            return
+        }
+        do {
+            let info = try addGenerated(AudioData(channels: a.channels, sampleRate: a.sampleRate), name: uniqueName("Loop"))
+            sampler.addAudioTrack(info, startTick: 0)
+            importMessage = "\(info.name) is on audio track \(sampler.trackIndex + 1) of \(sampler.sequence.name)."
+        } catch {
+            importMessage = "Couldn't save the loop: \(error.localizedDescription)"
+        }
+    }
+
+    /// Record on an audio track: records the Sample view's source while the sequence plays.
+    private func audioRecord(_ start: Bool, track: Int) {
+        guard start else {
+            if audioTake != nil { bridge.stopRecorder() }
+            return
+        }
+        guard recorderState == .idle || recorderState == .done else {
+            importMessage = "The recorder is busy."
+            return sampler.stop()
+        }
+        if sampling.source == .input, !host.inputEnabled {
+            importMessage = "The mic is off. Pick Mic / input as the source in Sample first (or a resample source)."
+            return sampler.stop()
+        }
+        let seq = sampler.sequence
+        let startTick = sampler.transport.position
+        let remaining = Double(seq.lengthTicks) - startTick
+        let seconds = remaining / Double(PPQN.ticks) * 60 / bpm + 1
+        audioTake = (track, startTick, sampling.source)
+        bridge.armRecorder(source: sampling.source.engineSource, threshold: 0, preRollFrames: 0, maxSeconds: min(600, seconds))
+        recorderState = .recording
+    }
+
+    /// The take lines up with the sequence: the count-in (and, for the mic, the round-trip
+    /// latency) is cut off the front.
+    private func finishAudioTake() {
+        guard let t = audioTake else { return }
+        audioTake = nil
+        recorderState = .idle
+        guard let take = bridge.takeRecording() else { return }
+        let rate = t.source == .input ? host.inputSampleRate : take.sampleRate
+        var drop = t.startTick < 0 ? -t.startTick / Double(PPQN.ticks) * 60 / bpm : 0
+        if t.source == .input { drop += host.outputLatency + host.inputLatency }
+        let first = min(take.channels[0].count, Int(drop * rate))
+        let channels = (sampling.stereo ? take.channels : [take.channels[0]]).map { Array($0[first...]) }
+        guard (channels.first?.count ?? 0) > Int(0.05 * rate) else {
+            importMessage = "The take was too short."
+            return
+        }
+        do {
+            let info = try addGenerated(AudioData(channels: channels, sampleRate: rate), name: uniqueName("Audio"))
+            sampler.finishAudioTake(track: t.track, sample: info, startTick: max(0, Int(t.startTick.rounded())))
+        } catch {
+            importMessage = "Couldn't save the take: \(error.localizedDescription)"
+        }
+    }
+
+    // MARK: Auto-sampler (SAMPLER_SPEC §3.2)
+
+    public struct AutoSampleSettings: Equatable, Sendable {
+        public enum Source: Hashable, Sendable { case synth, midi(channel: Int) }
+        public var source: Source = .synth
+        public var lowNote = 36
+        public var highNote = 84
+        /// Semitones between sampled notes.
+        public var step = 3
+        /// Velocity layers, 1…4.
+        public var layers = 1
+        public var holdSeconds = 1.5
+        public var releaseSeconds = 0.8
+        public var name = "Auto"
+        public init() {}
+
+        public var notes: [Int] { Array(stride(from: lowNote, through: max(lowNote, highNote), by: max(1, step))) }
+        public var velocities: [Int] { (1...max(1, min(4, layers))).map { Int((127.0 * Double($0) / Double(max(1, min(4, layers)))).rounded()) } }
+        public var seconds: Double { Double(notes.count * velocities.count) * (holdSeconds + releaseSeconds + 0.15) }
+    }
+
+    /// Plays each note × velocity on the synth (or MIDI out), records it, and builds a
+    /// keygroup from the takes.
+    public func startAutoSample(_ s: AutoSampleSettings) {
+        guard autoSampling == nil, recorderState == .idle || recorderState == .done else {
+            importMessage = "The recorder is busy."
+            return
+        }
+        guard sampler.project.keygroups.count < KeygroupProgram.maxPrograms else {
+            importMessage = "All \(KeygroupProgram.maxPrograms) keygroups are in use."
+            return
+        }
+        let jobs = s.notes.flatMap { n in s.velocities.map { (note: n, velocity: $0) } }
+        autoSampling = (0, jobs.count)
+        if case .midi = s.source {
+            autoSamplerUsesMic = true
+            updateMicInput()
+        }
+        autoSampleTask = Task { await runAutoSample(s, jobs: jobs) }
+    }
+
+    public func cancelAutoSample() { autoSampleTask?.cancel() }
+
+    private func runAutoSample(_ s: AutoSampleSettings, jobs: [(note: Int, velocity: Int)]) async {
+        defer {
+            autoSampling = nil
+            autoSamplerUsesMic = false
+            bridge.discardRecording()
+        }
+        let program: TrackProgram
+        let source: SamplingSource
+        switch s.source {
+        case .synth:
+            program = .synth
+            source = .synth
+        case .midi(let ch):
+            program = .midi(channel: ch)
+            source = .input
+            for _ in 0..<40 where !host.inputEnabled { try? await Task.sleep(for: .milliseconds(50)) }
+            guard host.inputEnabled else {
+                importMessage = "Auto-sampling external gear needs the mic / audio input."
+                return
+            }
+        }
+        let rate = source == .input ? host.inputSampleRate : bridge.sampleRate
+        var infos: [SampleInfo] = []
+        var takes: [(note: Int, velocity: Int, id: SampleID)] = []
+        for (i, job) in jobs.enumerated() {
+            if Task.isCancelled { break }
+            bridge.armRecorder(source: source.engineSource, threshold: 0, preRollFrames: 0,
+                               maxSeconds: s.holdSeconds + s.releaseSeconds + 0.5)
+            bridge.apply(SamplerCommand.liveNote(program, note: job.note, velocity: job.velocity))
+            try? await Task.sleep(for: .seconds(s.holdSeconds))
+            bridge.apply(SamplerCommand.liveNote(program, note: job.note, velocity: 0))
+            try? await Task.sleep(for: .seconds(s.releaseSeconds))
+            bridge.stopRecorder()
+            for _ in 0..<50 where bridge.recorderState != .done { try? await Task.sleep(for: .milliseconds(10)) }
+            guard let take = bridge.takeRecording() else { continue }
+            var audio = AudioData(channels: take.channels, sampleRate: rate).applying(.trimSilence(thresholdDB: -60))
+            audio = Self.trimTail(audio, thresholdDB: -60)
+            guard audio.frames > Int(0.02 * rate) else { continue }
+            do {
+                let info = try addGenerated(audio, name: "\(s.name) \(PitchName.noteName(job.note)) v\(job.velocity)")
+                infos.append(info)
+                takes.append((job.note, job.velocity, info.id))
+            } catch {
+                break
+            }
+            autoSampling = (i + 1, jobs.count)
+        }
+        guard !takes.isEmpty else {
+            importMessage = Task.isCancelled ? "Auto-sampling cancelled." : "Nothing was recorded (is the sound silent?)."
+            return
+        }
+        sampler.addSamples(infos, autoAssign: false)
+        if let k = sampler.addKeygroup(KeygroupProgram.autoSampled(name: s.name, takes: takes)) {
+            importMessage = "\(s.name): keygroup \(k + 1) with \(takes.count) take\(takes.count == 1 ? "" : "s")"
+                + (Task.isCancelled ? " (stopped early)." : ".")
+        }
+    }
+
+    /// Cuts the quiet end off a take (with a 10 ms fade).
+    static func trimTail(_ a: AudioData, thresholdDB: Float) -> AudioData {
+        let gate = pow(10, thresholdDB / 20)
+        let mono = a.mono
+        guard let last = mono.lastIndex(where: { abs($0) > gate }) else { return a }
+        let end = min(mono.count, last + Int(0.01 * a.sampleRate))
+        let fade = min(end, Int(0.01 * a.sampleRate))
+        let channels = a.channels.map { ch -> [Float] in
+            var c = Array(ch[..<end])
+            for i in 0..<fade { c[end - 1 - i] *= Float(i) / Float(fade) }
+            return c
+        }
+        return AudioData(channels: channels, sampleRate: a.sampleRate)
     }
 
     // MARK: Tuner & Mic mode (SYNTH_SPEC §4)
@@ -381,6 +596,8 @@ public final class AppModel {
         let st = bridge.recorderState
         let level = bridge.recorderPeak
         if abs(level - meter) > 0.005 { meter = level }
+        if autoSampling != nil { return } // the auto-sampler runs the recorder itself
+        if st == .done, audioTake != nil { return finishAudioTake() }
         let secs = (Double(bridge.recorderFrames) / bridge.sampleRate * 10).rounded() / 10
         if secs != recordedSeconds { recordedSeconds = secs }
         // The engine only reports DONE once; finish the take then.
@@ -618,6 +835,7 @@ public final class AppModel {
         var mixer = sampler.project.mixer
         mixer.xy.active = false
         b.apply(SamplerCommand.mixer(mixer))
+        b.apply(SamplerCommand.clips(sampler.project.clips, beatsPerBar: sampler.sequence.beatsPerBar))
         return b
     }
 

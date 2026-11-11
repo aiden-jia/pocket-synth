@@ -20,6 +20,7 @@ public enum MIDIFile {
         for (i, t) in seq.tracks.enumerated() {
             let channel: Int
             switch t.program {
+            case .audio: continue // no notes to write
             case .drum: channel = 9
             case .midi(let ch): channel = max(0, min(15, ch - 1))
             default: channel = i % 16 == 9 ? 10 : i % 16

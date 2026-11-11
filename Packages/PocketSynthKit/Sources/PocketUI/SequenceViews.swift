@@ -14,10 +14,14 @@ struct SeqView: View {
     var body: some View {
         VStack(spacing: 6) {
             toolbar
-            switch sampler.seqEditor {
-            case .grid: GridEditorView(model: model, sampler: sampler, page: $page)
+            if sampler.track.program == .audio {
+                AudioTrackView(model: model, sampler: sampler)
+            } else {
+                switch sampler.seqEditor {
+                case .grid: GridEditorView(model: model, sampler: sampler, page: $page)
             case .list: ListEditorView(sampler: sampler)
-            case .step: StepEditorView(sampler: sampler)
+                case .step: StepEditorView(sampler: sampler)
+                }
             }
         }
         .padding(10)
@@ -123,6 +127,7 @@ struct TrackMenu: View {
                 Toggle("Mute", isOn: Binding(get: { t.mute }, set: { sampler.setTrackMute($0) }))
                 Toggle("Solo", isOn: Binding(get: { t.solo }, set: { sampler.setTrackSolo(sampler.trackIndex, $0) }))
                 Menu("Program") { programButtons { sampler.setTrackProgram(sampler.trackIndex, $0) } }
+                if t.program.isNotes { ArpMenu(sampler: sampler) }
                 if sampler.sequence.tracks.count > 1 {
                     Button("Delete track", systemImage: "trash", role: .destructive) { sampler.deleteTrack(sampler.trackIndex) }
                 }
@@ -143,6 +148,8 @@ struct TrackMenu: View {
         Menu("MIDI out") {
             ForEach(1...16, id: \.self) { ch in Button("Channel \(ch)") { pick(.midi(channel: ch)) } }
         }
+        Button("Clips (launch loops)") { pick(.clip) }
+        Button("Audio track") { pick(.audio) }.disabled(!sampler.canAddAudioTrack)
     }
 }
 
@@ -199,7 +206,9 @@ struct ListEditorView: View {
     private func row(_ e: NoteEvent, bpb: Int, notes: Bool) -> some View {
         let beat = e.tick / PPQN.ticks
         let time = String(format: "%d.%d.%03d", beat / bpb + 1, beat % bpb + 1, e.tick % PPQN.ticks)
-        let what: String = notes ? PitchName.noteName(e.pad)
+        let what: String = sampler.track.program == .clip
+            ? "Clip \(e.pad + 1) " + (sampler.project.sample(sampler.project.clips.pads[min(e.pad, ClipProgram.count - 1)].sampleID)?.name ?? "")
+            : notes ? PitchName.noteName(e.pad)
             : PadAddress.name(e.pad) + " " + (sampler.project.sample(sampler.project.program.pads[e.pad].primarySample)?.name ?? "")
         return HStack {
             Text(time).frame(width: 84, alignment: .leading)

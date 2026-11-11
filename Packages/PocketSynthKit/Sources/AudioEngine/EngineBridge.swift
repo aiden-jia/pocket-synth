@@ -16,6 +16,12 @@ public final class EngineBridge {
     public let samples: SampleLibrary
     private var pads: [Int: Pad] = [:]
     private var keygroups: [Int: KeygroupProgram] = [:]
+    /// What the engine's audio slots, arps and clips were last given (sent only on change).
+    private var audioSlotsSent: [Int: AudioClip?] = [:]
+    private var arpsSent: [ArpKey: TrackArp] = [:]
+    private var clips: ClipProgram?
+    private var clipBeatsPerBar = 4
+    private struct ArpKey: Hashable { let target: Int32, program: Int32 }
     private var tempo = 120.0
     /// Loop buffers by track (the engine owns them; kept here to read for "send to sampler").
     private var loopBuffers: [Int: OpaquePointer] = [:]
@@ -237,12 +243,16 @@ public final class EngineBridge {
             for (i, r) in m.returns.enumerated() { ps_mixer_set_return(engine, Int32(i), Int32(r.type.rawValue), Float(r.level)) }
             ps_mixer_set_xy(engine, Int32(m.xy.type.rawValue), Float(m.xy.x), Float(m.xy.y), m.xy.active ? 1 : 0)
         case .sequence(let seq):
+            syncAudioSlots(seq)
+            syncArps(seq)
             var events = Self.engineEvents(seq)
             let compiled = ps_sequence_create(&events, Int32(events.count), Int32(seq.lengthTicks), seq.loop ? 1 : 0)
             ps_engine_set_sequence(engine, compiled)
         case .xy(let xy):
             ps_mixer_set_xy(engine, Int32(xy.type.rawValue), Float(xy.x), Float(xy.y), xy.active ? 1 : 0)
         case .queueSequence(let seq, let atBar, let loop):
+            syncAudioSlots(seq)
+            syncArps(seq)
             var events = Self.engineEvents(seq)
             let compiled = ps_sequence_create(&events, Int32(events.count), Int32(seq.lengthTicks), (loop ?? seq.loop) ? 1 : 0)
             ps_engine_queue_sequence(engine, compiled, atBar ? 1 : 0)
@@ -264,6 +274,58 @@ public final class EngineBridge {
         case .liveNote(let program, let note, let velocity):
             let (target, index) = Self.target(program)
             ps_live_note(engine, target, index, Int32(note), Int32(velocity))
+        case .clips(let c, let bpb):
+            clips = c
+            clipBeatsPerBar = bpb
+            sendClips()
+        case .clipPad(let i, let down):
+            ps_clip_pad(engine, Int32(i), down ? 1 : 0)
+        case .clipStopAll:
+            ps_clip_stop_all(engine)
+        }
+    }
+
+    private func sendClips() {
+        guard let c = clips else { return }
+        for (i, pad) in c.pads.prefix(Int(PS_CLIPS)).enumerated() {
+            var p = PSClipParams(sample: pad.sampleID.flatMap { samples.handle(for: $0) },
+                                 mode: Int32([ClipMode.loop, .oneShot, .gate].firstIndex(of: pad.mode)!),
+                                 level: Float(pad.level), beats: pad.beats, group: Int32(ClipProgram.group(i)))
+            ps_clip_set(engine, Int32(i), &p)
+        }
+        ps_clip_set_quantize(engine, c.quantize.beats(beatsPerBar: clipBeatsPerBar))
+    }
+
+    /// Audio tracks: slot k plays track k's clip (slots that no longer have one are cleared).
+    private func syncAudioSlots(_ seq: PadSequence) {
+        var want: [Int: AudioClip?] = [:]
+        for s in 0..<Int(PS_AUDIO_SLOTS) { want[s] = .some(nil) }
+        for (t, slot) in seq.audioSlots { want[slot] = seq.tracks[t].audio }
+        for (slot, clip) in want where audioSlotsSent[slot] != .some(clip) {
+            if audioSlotsSent[slot] == nil, clip == nil { audioSlotsSent[slot] = .some(nil); continue }
+            ps_audio_set_slot(engine, Int32(slot), clip.flatMap { samples.handle(for: $0.sampleID) },
+                              Float(clip?.level ?? 1), Float(clip?.pan ?? 0))
+            audioSlotsSent[slot] = clip
+        }
+    }
+
+    /// One arpeggiator per destination: the first note track (in order) that has it on.
+    private func syncArps(_ seq: PadSequence) {
+        var want: [ArpKey: TrackArp] = [:]
+        for t in seq.tracks where t.program.isNotes && t.arp.on {
+            let (target, program) = Self.target(t.program)
+            let key = ArpKey(target: target, program: program)
+            if want[key] == nil { want[key] = t.arp }
+        }
+        for (key, _) in arpsSent where want[key] == nil {
+            ps_arp_set(engine, key.target, key.program, nil)
+            arpsSent[key] = nil
+        }
+        for (key, arp) in want where arpsSent[key] != arp {
+            var a = PSArp(mode: Int32(ArpMode.allCases.firstIndex(of: arp.mode)!), octaves: Int32(arp.octaves),
+                          rateBeats: arp.rate.beats, gate: Float(arp.gate), latch: arp.latch ? 1 : 0)
+            ps_arp_set(engine, key.target, key.program, &a)
+            arpsSent[key] = arp
         }
     }
 
@@ -271,7 +333,15 @@ public final class EngineBridge {
     /// engine's event array, each event tagged with its track's target.
     static func engineEvents(_ seq: PadSequence) -> [PSNoteEvent] {
         let anySolo = seq.tracks.contains { $0.solo }
-        return seq.tracks.filter { !$0.mute && (!anySolo || $0.solo) }.flatMap { track in
+        func audible(_ t: Track) -> Bool { !t.mute && (!anySolo || t.solo) }
+        // Audio tracks: one event that starts the region and holds it to the sequence end.
+        let audio = seq.audioSlots.compactMap { t, slot -> PSNoteEvent? in
+            let track = seq.tracks[t]
+            guard audible(track), let clip = track.audio, clip.startTick < seq.lengthTicks else { return nil }
+            return PSNoteEvent(tick: Int32(clip.startTick), length: Int32(seq.lengthTicks - clip.startTick), pad: Int32(slot),
+                               velocity: 127, tune: 0, target: Int32(PS_TARGET_AUDIO.rawValue), program: 0)
+        }
+        return audio + seq.tracks.filter { audible($0) && $0.program != .audio }.flatMap { track in
             let (target, program) = Self.target(track.program)
             return track.events.map {
                 PSNoteEvent(tick: Int32($0.tick), length: Int32($0.length), pad: Int32($0.pad),
@@ -286,6 +356,8 @@ public final class EngineBridge {
         case .keygroup(let i): (Int32(PS_TARGET_KEYGROUP.rawValue), Int32(i))
         case .synth: (Int32(PS_TARGET_SYNTH.rawValue), 0)
         case .midi(let ch): (Int32(PS_TARGET_MIDI.rawValue), Int32(max(0, min(15, ch - 1))))
+        case .audio: (Int32(PS_TARGET_AUDIO.rawValue), 0)
+        case .clip: (Int32(PS_TARGET_CLIP.rawValue), 0)
         }
     }
 
@@ -333,11 +405,38 @@ public final class EngineBridge {
         while true {
             let n = Int(ps_engine_poll_recorded(engine, &buf, Int32(buf.count)))
             out += buf.prefix(n).map {
-                RecordedHit(tick: Int($0.tick), pad: Int($0.pad), velocity: Int($0.velocity), tune: Double($0.tune),
-                            isNote: $0.target != Int32(PS_TARGET_DRUM.rawValue))
+                let clip = $0.target == Int32(PS_TARGET_CLIP.rawValue)
+                return RecordedHit(tick: Int($0.tick), pad: Int($0.pad), velocity: Int($0.velocity), tune: Double($0.tune),
+                                   isNote: !clip && $0.target != Int32(PS_TARGET_DRUM.rawValue), isClip: clip)
             }
             if n < buf.count { return out }
         }
+    }
+
+    /// Everything played since the last call (retrospective record), stamped `time`.
+    public func pollRetro(time: Double) -> [RetroEvent] {
+        var buf = [PSRetroEvent](repeating: PSRetroEvent(), count: 512)
+        var out: [RetroEvent] = []
+        while true {
+            let n = Int(ps_engine_poll_retro(engine, &buf, Int32(buf.count)))
+            out += buf.prefix(n).compactMap { e in
+                let d: RetroEvent.Destination
+                switch e.target {
+                case Int32(PS_TARGET_DRUM.rawValue): d = .pad
+                case Int32(PS_TARGET_KEYGROUP.rawValue): d = .keygroup(Int(e.program))
+                case Int32(PS_TARGET_SYNTH.rawValue): d = .synth
+                case Int32(PS_TARGET_MIDI.rawValue): d = .midi(channel: Int(e.program) + 1)
+                default: return nil
+                }
+                return RetroEvent(beat: e.beat, destination: d, note: Int(e.note), velocity: Int(e.velocity),
+                                  tune: Double(e.tune), time: time)
+            }
+            if n < buf.count { return out }
+        }
+    }
+
+    public var clipStates: [ClipState] {
+        (0..<Int(PS_CLIPS)).map { ClipState(rawValue: Int(ps_clip_state(engine, Int32($0)))) ?? .stopped }
     }
 
     public var transportTicks: Double { ps_transport_ticks(engine) }
@@ -438,6 +537,10 @@ public final class EngineBridge {
         for (i, p) in pads where p.layers.contains(where: { $0.sampleID == id }) { sendPad(i, p) }
         for (i, k) in keygroups where k.zones.contains(where: { $0.layers.contains { $0.sampleID == id } }) {
             sendKeygroup(i, k)
+        }
+        if clips?.pads.contains(where: { $0.sampleID == id }) == true { sendClips() }
+        for (slot, clip) in audioSlotsSent where clip?.sampleID == id {
+            ps_audio_set_slot(engine, Int32(slot), samples.handle(for: id), Float(clip?.level ?? 1), Float(clip?.pan ?? 0))
         }
     }
 

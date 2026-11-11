@@ -192,6 +192,9 @@ struct LooperMenu: View {
                     Button("Send loop \(t + 1) to Sampler", systemImage: "square.and.arrow.down") {
                         model.sendLoopToSampler(track: t)
                     }
+                    Button("Send loop \(t + 1) to an audio track", systemImage: "waveform.path") {
+                        model.sendLoopToAudioTrack(track: t)
+                    }
                 }
             }
             if !model.synth.looperHasAudio {

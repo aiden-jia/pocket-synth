@@ -28,7 +28,10 @@ public struct Song: Hashable, Codable, Sendable {
         var out = PadSequence(name: name, bars: 1)
         out.tracks = (0..<trackCount).map { i in
             let first = list.lazy.compactMap { s in sequences[s].tracks.indices.contains(i) ? sequences[s].tracks[i] : nil }.first
-            return Track(name: first?.name ?? "Track \(i + 1)", program: first?.program ?? .drum)
+            var t = Track(name: first?.name ?? "Track \(i + 1)", program: first?.program ?? .drum)
+            t.arp = first?.arp ?? TrackArp()
+            t.audio = first?.audio
+            return t
         }
         let bars = min(PadSequence.maxBars, max(1, list.reduce(0) { $0 + sequences[$1].bars }))
         out.setBars(bars)

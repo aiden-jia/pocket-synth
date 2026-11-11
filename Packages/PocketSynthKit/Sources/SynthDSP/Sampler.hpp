@@ -36,6 +36,9 @@ class Sampler {
 public:
     static constexpr int kVoices = 64;
     static constexpr int kPreviewPad = PS_SAMPLER_PADS;
+    /// Audio-track regions play on hidden pads after the preview pad.
+    static constexpr int kAudioBase = PS_SAMPLER_PADS + 1;
+    static constexpr int kPadSlots = kAudioBase + PS_AUDIO_SLOTS;
 
     explicit Sampler(double sr) : sr_(sr) {
         for (auto &p : pads_) p = PSPadParams{};
@@ -43,11 +46,11 @@ public:
     }
 
     void setPad(int pad, const PSPadParams &p) {
-        if (pad >= 0 && pad <= kPreviewPad) pads_[pad] = p;
+        if (pad >= 0 && pad < kPadSlots) pads_[pad] = p;
     }
 
     void trigger(int pad, int velocity, float tune = 0) {
-        if (pad < 0 || pad > kPreviewPad) return;
+        if (pad < 0 || pad >= kPadSlots) return;
         const PSPadParams &p = pads_[pad];
         velocity = std::clamp(velocity, 1, 127);
 
@@ -287,7 +290,7 @@ private:
     double sr_;
     double chokeStep_;
     uint64_t clock_ = 0;
-    std::array<PSPadParams, PS_SAMPLER_PADS + 1> pads_{}; // + the hidden preview pad
+    std::array<PSPadParams, kPadSlots> pads_{}; // + the hidden preview and audio-track pads
     std::array<KeygroupProgram, PS_KEYGROUP_PROGRAMS> keygroups_{};
     std::array<SamplerVoice, kVoices> voices_{};
 };

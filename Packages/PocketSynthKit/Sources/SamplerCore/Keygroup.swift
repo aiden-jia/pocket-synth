@@ -44,6 +44,27 @@ public struct KeygroupProgram: Hashable, Codable, Sendable {
         return p
     }
 
+    /// Auto-sampler (SAMPLER_SPEC §3.2): one zone per sampled note, reaching halfway to its
+    /// neighbours, with one layer per velocity (each covering up to the next one).
+    public static func autoSampled(name: String, takes: [(note: Int, velocity: Int, id: SampleID)]) -> KeygroupProgram {
+        let notes = Array(Set(takes.map(\.note))).sorted().prefix(maxZones)
+        var p = KeygroupProgram(name: name)
+        for (i, n) in notes.enumerated() {
+            let lo = i == 0 ? 0 : (notes[i - 1] + n) / 2 + 1
+            let hi = i == notes.count - 1 ? 127 : (n + notes[i + 1]) / 2
+            var zone = KeygroupZone(lowNote: lo, highNote: max(lo, hi), rootNote: n)
+            let layers = takes.filter { $0.note == n }.sorted { $0.velocity < $1.velocity }.prefix(Pad.maxLayers)
+            zone.layers = layers.enumerated().map { j, t in
+                var l = PadLayer(sampleID: t.id)
+                l.velocityLow = j == 0 ? 0 : layers[layers.index(layers.startIndex, offsetBy: j - 1)].velocity + 1
+                l.velocityHigh = j == layers.count - 1 ? 127 : t.velocity
+                return l
+            }
+            p.zones.append(zone)
+        }
+        return p
+    }
+
     public func zone(for note: Int) -> KeygroupZone? {
         zones.first { note >= $0.lowNote && note <= $0.highNote }
     }

@@ -81,6 +81,16 @@ public final class AudioHost {
         #endif
     }
 
+    /// Input latency (seconds): how late recorded audio arrives.
+    public var inputLatency: Double {
+        #if os(iOS)
+        let s = AVAudioSession.sharedInstance()
+        return inputEnabled ? s.inputLatency : 0
+        #else
+        return 0
+        #endif
+    }
+
     // MARK: Input (sampling)
 
     public private(set) var inputEnabled = false

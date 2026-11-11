@@ -8,6 +8,8 @@
 
 #include "include/SynthDSP.h"
 
+#include "Arp.hpp"
+#include "Clips.hpp"
 #include "DSPCommon.hpp"
 #include "Drums.hpp"
 #include "Effects.hpp"
@@ -32,6 +34,7 @@ struct Command {
         LoopFirst, LoopStopFirst, LoopArm, LoopClear, LoopClearAll, LoopPause, LoopGain,
         RecArm, RecStop, RecRelease, MeterSource, Preview,
         KeygroupProgram, KeygroupZone, LiveNote, MixSubmix, MixReturn, MixXY, SynthSample,
+        ArpSet, ClipSet, ClipQuantize, ClipPad, ClipStopAll,
     } type;
     int32_t a = 0;  // note / param / pad / slot / voice
     float b = 0;    // velocity / value / tune
@@ -47,6 +50,8 @@ struct Command {
         PSRhythm rhythm;
         PSBeatPattern beat;
         PSKeygroupZone zone;
+        PSArp arp;
+        PSClipParams clip;
         int notes[PS_MAX_SLOT_NOTES];
     } u;
     Command() : type(AllOff), u{} {}
@@ -75,6 +80,7 @@ struct PSEngine {
     SPSCQueue<PSRecordedEvent, 2048> recorded;
     SPSCQueue<PSMidiEvent, 4096> midiOutQueue;
     SPSCQueue<uint32_t, 1024> midiInQueue;
+    SPSCQueue<PSRetroEvent, 4096> retro;
 
     Synth synth;
     Sampler sampler;
@@ -96,6 +102,8 @@ struct PSEngine {
     std::vector<Return> returns;
     XYEffect xy;
     InputRing input;
+    std::array<TrackArp, PS_ARPS> arps{};
+    ClipPlayer clips;
 
     // Clock & transport.
     double bpm = 120;
@@ -142,6 +150,7 @@ struct PSEngine {
     std::atomic<double> loopPosOut{0};
     std::atomic<int> recStateOut{0}, recFramesOut{0};
     std::atomic<float> recPeakOut{0};
+    std::array<std::atomic<int>, PS_CLIPS> clipOut{};
 
     // Scratch buses, preallocated.
     std::array<float, kSub> chordL{}, chordR{}, bassL{}, bassR{}, smpL{}, smpR{}, drumL{}, drumR{};
@@ -161,7 +170,7 @@ struct PSEngine {
           looper(sr, Looper::Release{this, [](void *ctx, PSSample *s) {
               static_cast<PSEngine *>(ctx)->garbage.push(Garbage{s, nullptr});
           }}),
-          recorder(sr), input(static_cast<size_t>(4 * sr)), xy(sr) {
+          recorder(sr), input(static_cast<size_t>(4 * sr)), xy(sr), clips(sr) {
         for (int i = 0; i < PS_SUBMIXES; ++i) submixes.emplace_back(sr);
         for (int i = 0; i < PS_RETURNS; ++i) returns.emplace_back(sr);
         lastLiveTick.fill(-1e12);
@@ -197,6 +206,7 @@ struct PSEngine {
     void synthNote(int note, float vel, bool on) {
         if (suppressMidi) return;
         const int v = on ? std::clamp(static_cast<int>(std::lround(vel * 127)), 1, 127) : 0;
+        if (note >= 0) retroPush(PS_TARGET_SYNTH, 0, note, v, 0);
         looper.recordMidi(note, v);
         if (!midiOutOn) return;
         const uint8_t ch = static_cast<uint8_t>(liveChannel & 15);
@@ -240,9 +250,10 @@ struct PSEngine {
         const bool drumsMode = performer.mode() == PS_PERF_DRUMS || performer.mode() == PS_PERF_BEAT;
         if (type == 0x90 && d2 > 0) {
             if (drumsMode) { if (const int v = drumVoiceForGM(d1); v >= 0) drums.trigger(v, d2); }
-            else { sustained[d1] = false; synth.noteOn(d1, d2 / 127.0f, false); }
+            else { sustained[d1] = false; synth.noteOn(d1, d2 / 127.0f, false); retroPush(PS_TARGET_SYNTH, 0, d1, d2, 0); }
         } else if (type == 0x80 || (type == 0x90 && d2 == 0)) {
             if (!drumsMode) {
+                retroPush(PS_TARGET_SYNTH, 0, d1, 0, 0);
                 if (sustain) sustained[d1] = true;
                 else if (performer.heldCount(d1) == 0) synth.noteOff(d1);
             }
@@ -332,7 +343,8 @@ struct PSEngine {
     }
 
     /// Queues a live hit for recording. `absTick` is the unwrapped transport position.
-    void stamp(int pad, int velocity, float tune, double absTick, int target = PS_TARGET_DRUM) {
+    void stamp(int pad, int velocity, float tune, double absTick, int target = PS_TARGET_DRUM, int program = 0) {
+        retroPush(target, program, pad, velocity, tune, absTick / kPPQ);
         if (!recording || !playing) return;
         PSRecordedEvent e;
         e.tick = static_cast<int>(std::lround(recordTick(absTick)));
@@ -344,9 +356,29 @@ struct PSEngine {
         if (velocity > 0 && pad >= 0 && pad < PS_SAMPLER_PADS) lastLiveTick[pad] = absTick;
     }
 
-    /// Plays a note on a note target (keygroup / synth / MIDI); velocity 0 = off.
-    void noteToTarget(int target, int program, int note, int velocity) {
+    void retroPush(int target, int program, int note, int velocity, float tune, double atBeat = -1e18) {
+        PSRetroEvent e;
+        e.beat = atBeat > -1e17 ? atBeat : beat;
+        e.target = target;
+        e.program = program;
+        e.note = note;
+        e.velocity = velocity;
+        e.tune = tune;
+        retro.push(e);
+    }
+
+    TrackArp *arpFor(int target, int program) {
+        for (auto &a : arps) if (a.active && a.target == target && a.program == program) return &a;
+        return nullptr;
+    }
+
+    /// Plays a note on a note target (keygroup / synth / MIDI); velocity 0 = off. Notes for
+    /// a destination with an arpeggiator go to the arp instead (unless it's the arp playing).
+    void noteToTarget(int target, int program, int note, int velocity, bool viaArp = true) {
         note = std::clamp(note, 0, 127);
+        if (viaArp) {
+            if (TrackArp *a = arpFor(target, program)) { a->input(note, velocity, beat, playing); return; }
+        }
         switch (target) {
         case PS_TARGET_KEYGROUP:
             if (velocity > 0) sampler.noteOn(program, note, velocity);
@@ -362,6 +394,24 @@ struct PSEngine {
             midiOut(program, note, velocity);
             break;
         default: break;
+        }
+    }
+
+    /// Arp steps due in [b0, b1): each plays its note now and releases it after the gate.
+    void processArps(double b0, double b1) {
+        const double fpb = framesPerBeat();
+        for (auto &a : arps) {
+            if (!a.active) continue;
+            a.process(b0, b1, [&](int note, int vel, double gateBeats) {
+                noteToTarget(a.target, a.program, note, vel, false);
+                Pending p;
+                p.kind = Pending::ArpOff;
+                p.target = static_cast<uint8_t>(a.target);
+                p.slot = static_cast<uint8_t>(std::clamp(a.program, 0, 255));
+                p.a = static_cast<int16_t>(note);
+                p.at = frame + static_cast<uint64_t>(std::max(1.0, gateBeats * fpb));
+                scheduler.add(p);
+            });
         }
     }
 
@@ -389,6 +439,9 @@ struct PSEngine {
         case Pending::PadRelease: sampler.release(p.a); break;
         case Pending::KeygroupOff: sampler.noteOff(p.slot, p.a); break;
         case Pending::MidiOff: midiOut(p.slot, p.a, 0); break;
+        case Pending::TargetOff: noteToTarget(p.target, p.slot, p.a, 0); break;
+        case Pending::ArpOff: noteToTarget(p.target, p.slot, p.a, 0, false); break;
+        case Pending::ClipOff: clips.sequenced(p.a, false, beat); break;
         default: performer.pending(p); break;
         }
     }
@@ -457,10 +510,25 @@ struct PSEngine {
             p.at = frame + static_cast<uint64_t>(std::max(1.0, it->length * framesPerTick));
             p.a = static_cast<int16_t>(it->pad);
             p.slot = static_cast<uint8_t>(std::clamp(it->program, 0, 255));
+            if (it->target == PS_TARGET_AUDIO) {
+                if (it->pad >= PS_AUDIO_SLOTS) continue;
+                p.a = static_cast<int16_t>(Sampler::kAudioBase + it->pad);
+                sampler.trigger(p.a, it->velocity, 0);
+                p.kind = Pending::PadRelease;
+                scheduler.add(p);
+                continue;
+            }
+            if (it->target == PS_TARGET_CLIP) {
+                if (it->pad >= PS_CLIPS) continue;
+                clips.sequenced(it->pad, true, beat);
+                p.kind = Pending::ClipOff;
+                scheduler.add(p);
+                continue;
+            }
             if (it->target != PS_TARGET_DRUM) {
                 noteToTarget(it->target, it->program, it->pad, it->velocity);
-                p.kind = it->target == PS_TARGET_KEYGROUP ? Pending::KeygroupOff
-                       : it->target == PS_TARGET_MIDI ? Pending::MidiOff : Pending::SynthOff;
+                p.kind = Pending::TargetOff;
+                p.target = static_cast<uint8_t>(it->target);
                 scheduler.add(p);
                 continue;
             }
@@ -532,6 +600,7 @@ struct PSEngine {
             case Command::ReleaseSample:
                 sampler.forget(c.sample);
                 synth.forget(c.sample);
+                clips.forget(c.sample);
                 looper.forget(c.sample);
                 recorder.forget(c.sample);
                 if (!garbage.push(Garbage{c.sample, nullptr})) { /* full: leak rather than free here */ }
@@ -546,6 +615,7 @@ struct PSEngine {
             case Command::Stop:
                 playing = false;
                 releaseAllScheduledPads();
+                clips.stopAll();
                 if (queued) { garbage.push(Garbage{nullptr, queued}); queued = nullptr; }
                 seqOrigin = 0;
                 if (midiClockOn) sendMidi(0, 0xFC, 0, 0); // Stop
@@ -624,8 +694,19 @@ struct PSEngine {
             case Command::KeygroupZone: sampler.setKeygroupZone(c.a, c.c, c.u.zone); break;
             case Command::LiveNote:
                 noteToTarget(c.e, c.f, c.a, c.c);
-                stamp(c.a, c.c, 0, ticks(), c.e);
+                stamp(c.a, c.c, 0, ticks(), c.e, c.f);
                 break;
+            case Command::ArpSet: {
+                TrackArp *a = arpFor(c.a, c.e);
+                if (!c.c) { if (a) a->remove(); break; }
+                if (!a) for (auto &x : arps) if (!x.active) { a = &x; break; }
+                if (a) a->configure(c.a, c.e, c.u.arp);
+                break;
+            }
+            case Command::ClipSet: clips.set(c.a, c.u.clip); break;
+            case Command::ClipQuantize: clips.setQuantize(c.d); break;
+            case Command::ClipPad: if (c.a >= 0 && c.a < PS_CLIPS) clips.pad(c.a, c.c != 0, beat, playing); break;
+            case Command::ClipStopAll: clips.stopAll(); break;
             case Command::Preview: {
                 PSPadParams p{};
                 p.layerCount = 1;
@@ -669,14 +750,15 @@ struct PSEngine {
         }
         clockOut(b0, b1);
         processNoteRepeat(b0, b1);
+        processArps(b0, b1);
         performer.process(b0, b1);
 
-        renderAudio(L, R, n);
+        renderAudio(L, R, n, b0, b1);
         beat = b1;
         frame += static_cast<uint64_t>(n);
     }
 
-    void renderAudio(float *L, float *R, int n) {
+    void renderAudio(float *L, float *R, int n, double b0, double b1) {
         for (auto *buf : {&chordL, &chordR, &bassL, &bassR, &smpL, &smpR, &drumL, &drumR})
             std::fill_n(buf->begin(), n, 0.0f);
 
@@ -719,6 +801,9 @@ struct PSEngine {
             rR[k] = retR[k].data();
         }
         sampler.render(busL, busR, rL, rR, n);
+        clips.process(b0, b1, bpm, smpL.data(), smpR.data(), n, [&](int clip, bool on) {
+            stamp(clip, on ? 100 : 0, 0, b0 * kPPQ, PS_TARGET_CLIP);
+        });
         const double mk = 1.0 - std::exp(-1.0 / (0.01 * sampleRate));
         for (int k = 0; k < PS_SUBMIXES; ++k) submixes[k].process(subL[k].data(), subR[k].data(), smpL.data(), smpR.data(), n, mk);
         for (int k = 0; k < PS_RETURNS; ++k) returns[k].process(retL[k].data(), retR[k].data(), smpL.data(), smpR.data(), n, mk);
@@ -789,6 +874,7 @@ struct PSEngine {
         recStateOut.store(recorder.state(), std::memory_order_relaxed);
         recFramesOut.store(recorder.frames(), std::memory_order_relaxed);
         recPeakOut.store(recorder.peak(), std::memory_order_relaxed);
+        for (int i = 0; i < PS_CLIPS; ++i) clipOut[i].store(clips.state(i), std::memory_order_relaxed);
     }
 
     /// Mic audio for the vocoder. Input arrives in bursts; keep at most ~85 ms queued.
@@ -1096,6 +1182,61 @@ int ps_recorder_state(const PSEngine *engine) { return engine->recStateOut.load(
 int ps_recorder_frames(const PSEngine *engine) { return engine->recFramesOut.load(std::memory_order_relaxed); }
 
 float ps_recorder_peak(const PSEngine *engine) { return engine->recPeakOut.load(std::memory_order_relaxed); }
+
+// Audio tracks, arps, retro, clips
+
+void ps_audio_set_slot(PSEngine *engine, int slot, PSSample *sample, float level, float pan) {
+    if (slot < 0 || slot >= PS_AUDIO_SLOTS) return;
+    PSPadParams p{};
+    if (sample) {
+        p.layerCount = 1;
+        p.layers[0].sample = sample;
+        p.layers[0].level = 1;
+        p.layers[0].velocityLow = 0;
+        p.layers[0].velocityHigh = 127;
+    }
+    p.oneShot = 0;      // the event's length gates it (cut at the sequence end)
+    p.mono = 1;
+    p.sustain = 1;
+    p.releaseMs = 8;
+    p.level = std::max(0.0f, level);
+    p.pan = std::clamp(pan, -1.0f, 1.0f);
+    ps_sampler_set_pad(engine, Sampler::kAudioBase + slot, &p);
+}
+
+void ps_arp_set(PSEngine *engine, int target, int program, const PSArp *arp) {
+    Command c = make(Command::ArpSet, target, 0, arp ? 1 : 0);
+    c.e = program;
+    if (arp) c.u.arp = *arp;
+    engine->push(c);
+}
+
+int ps_engine_poll_retro(PSEngine *engine, PSRetroEvent *out, int max) {
+    int n = 0;
+    while (n < max && engine->retro.pop(out[n])) ++n;
+    return n;
+}
+
+void ps_clip_set(PSEngine *engine, int clip, const PSClipParams *params) {
+    Command c = make(Command::ClipSet, clip);
+    c.u.clip = *params;
+    engine->push(c);
+}
+
+void ps_clip_set_quantize(PSEngine *engine, double beats) {
+    Command c = make(Command::ClipQuantize);
+    c.d = beats;
+    engine->push(c);
+}
+
+void ps_clip_pad(PSEngine *engine, int clip, int down) { engine->push(make(Command::ClipPad, clip, 0, down)); }
+
+void ps_clip_stop_all(PSEngine *engine) { engine->push(make(Command::ClipStopAll)); }
+
+int ps_clip_state(const PSEngine *engine, int clip) {
+    if (clip < 0 || clip >= PS_CLIPS) return 0;
+    return engine->clipOut[clip].load(std::memory_order_relaxed);
+}
 
 void ps_synth_set_sample(PSEngine *engine, PSSample *sample, float root_note) {
     Command c = make(Command::SynthSample, 0, root_note);

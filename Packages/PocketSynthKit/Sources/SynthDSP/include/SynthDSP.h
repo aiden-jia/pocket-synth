@@ -198,6 +198,8 @@ typedef enum {
     PS_TARGET_KEYGROUP,    // a keygroup program (`pad` = MIDI note, `program` = keygroup)
     PS_TARGET_SYNTH,       // the synth panel's sound (`pad` = MIDI note)
     PS_TARGET_MIDI,        // MIDI out (`pad` = note, `program` = channel 0…15)
+    PS_TARGET_AUDIO,       // an audio-track region (`pad` = audio slot): plays until the event ends
+    PS_TARGET_CLIP,        // a clip (`pad` = clip 0…15): starts at the event, stops at its end
 } PSTarget;
 
 typedef struct {
@@ -265,6 +267,76 @@ void ps_keygroup_set_zone(PSEngine *engine, int program, int zone, const PSKeygr
 
 /// A live note on a target (velocity 0 = off). Recorded like pad hits while recording.
 void ps_live_note(PSEngine *engine, int target, int program, int note, int velocity);
+
+// MARK: - Audio tracks (SAMPLER_SPEC §6)
+
+#define PS_AUDIO_SLOTS 16
+
+/// The region an audio slot plays (NULL = none). A PS_TARGET_AUDIO event starts it from
+/// the sample's beginning; the event's end (or stopping) releases it.
+void ps_audio_set_slot(PSEngine *engine, int slot, PSSample *sample, float level, float pan);
+
+// MARK: - Track arpeggiator (SAMPLER_SPEC §6)
+
+typedef enum {
+    PS_ARP_UP = 0, PS_ARP_DOWN, PS_ARP_UPDOWN, PS_ARP_UPDOWN_INCL, PS_ARP_RANDOM, PS_ARP_ORDER,
+} PSArpMode;
+
+typedef struct {
+    int mode;              // PSArpMode
+    int octaves;           // 1…4
+    double rateBeats;      // step length
+    float gate;            // 0.05…1 of a step
+    int latch;             // 1 = notes keep playing after release, until a new chord
+} PSArp;
+
+#define PS_ARPS 8
+
+/// Arpeggiates every note sent to (target, program) — live notes and sequence events.
+/// Keygroup, synth and MIDI targets only. NULL removes it. Changing the settings keeps
+/// the held notes.
+void ps_arp_set(PSEngine *engine, int target, int program, const PSArp *arp);
+
+// MARK: - Retrospective record (SAMPLER_SPEC §4)
+
+/// Every live hit and note (pads, note repeat, live notes, the synth panel, MIDI in) on
+/// the free-running beat clock, whether or not anything records. Velocity 0 = release.
+typedef struct {
+    double beat;
+    int target;            // PSTarget
+    int program;           // keygroup index / MIDI channel
+    int note;              // pad or MIDI note
+    int velocity;
+    float tune;
+} PSRetroEvent;
+
+int ps_engine_poll_retro(PSEngine *engine, PSRetroEvent *out, int max);
+
+// MARK: - Clip program (SAMPLER_SPEC §3.3)
+
+#define PS_CLIPS 16
+
+typedef enum { PS_CLIP_LOOP = 0, PS_CLIP_ONESHOT, PS_CLIP_GATE } PSClipMode;
+typedef enum { PS_CLIP_STOPPED = 0, PS_CLIP_QUEUED, PS_CLIP_PLAYING, PS_CLIP_STOPPING } PSClipState;
+
+typedef struct {
+    PSSample *sample;      // NULL = empty
+    int mode;              // PSClipMode
+    float level;
+    double beats;          // length it is played over (varispeed to the tempo); 0 = own speed
+    int group;             // clips in one group stop each other (one plays at a time)
+} PSClipParams;
+
+void ps_clip_set(PSEngine *engine, int clip, const PSClipParams *params);
+/// Launch quantize in beats: 0 = immediate. With nothing playing and the transport
+/// stopped, a launch always starts at once (and sets the grid).
+void ps_clip_set_quantize(PSEngine *engine, double beats);
+/// A pad press (down 1) or release (0). Loop: toggles; one-shot: (re)starts; gate:
+/// plays while held. Starts and stops land on the quantize grid and are recorded.
+void ps_clip_pad(PSEngine *engine, int clip, int down);
+void ps_clip_stop_all(PSEngine *engine);
+/// PSClipState.
+int ps_clip_state(const PSEngine *engine, int clip);
 
 // MARK: - Synth performers (SYNTH_SPEC §4)
 
