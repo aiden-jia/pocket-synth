@@ -1,8 +1,10 @@
 // Synth instrument: 32 voices, each a main (left) + detuned partner (right) generator.
-// Engines: analog (2 oscillators), 2-op FM, noise, hybrid (analog + noise).
+// Engines: analog (2 oscillators), 2-op FM, noise, hybrid (analog + noise), sample (one
+// pitched one-shot sample, e.g. a Mic-mode take).
 #pragma once
 
 #include "DSPCommon.hpp"
+#include "Sampler.hpp"
 #include "include/SynthDSP.h"
 
 namespace ps {
@@ -47,10 +49,19 @@ inline PSPatch defaultPatch(int wave = PS_WAVE_SAW) {
     return p;
 }
 
+/// The sample engine's source: a sample and the pitch it has at its own speed.
+struct SampleSource {
+    const PSSample *sample = nullptr;
+    double rootHz = 261.63;
+};
+
 /// Per-channel generator state (the voice has one for L and one for R).
 struct Generator {
     double p1 = 0, p2 = 0, pm = 0; // osc1, osc2, FM modulator phases
     double fb = 0;                 // FM feedback memory
+    double sp = 0;                 // sample read position (frames)
+    bool done = false;             // the sample engine reached the end
+    int channel = 0;               // which sample channel this side reads
     std::array<double, 6> metal{}; // metallic-noise square phases
     SVF tone, noiseFilter;
     Noise noise;
@@ -60,6 +71,8 @@ struct Generator {
         p2 = std::fmod(offset + 0.37, 1.0);
         pm = 0;
         fb = 0;
+        sp = 0;
+        done = false;
         metal.fill(offset);
         tone.reset();
         noiseFilter.reset();
@@ -91,10 +104,21 @@ struct Generator {
         }
     }
 
-    double next(const PSPatch &p, double hz, double sr, double fmIndexScale) {
+    double next(const PSPatch &p, double hz, double sr, double fmIndexScale, const SampleSource &src) {
         const double dt = hz / sr;
         double s = 0;
         switch (p.engine) {
+        case PS_ENGINE_SAMPLE: {
+            const PSSample *smp = src.sample;
+            if (!smp || done || smp->frames < 2) { done = true; return 0; }
+            const int i0 = static_cast<int>(sp);
+            if (i0 >= smp->frames - 1) { done = true; return 0; }
+            const float *x = smp->channel[std::min(channel, smp->channels - 1)].data();
+            const double f = sp - i0;
+            s = x[i0] + (x[i0 + 1] - x[i0]) * f;
+            sp += hz / src.rootHz * smp->sampleRate / sr;
+            break;
+        }
         case PS_ENGINE_FM: {
             const double mod = std::sin(kTwoPi * pm + p.fmFeedback * 2.0 * fb);
             fb = mod;
@@ -171,6 +195,16 @@ public:
     void setStereo(bool on) { stereo_ = on; }
     void setGlideMs(double ms) { glideMs_ = ms; }
     void setVibratoCents(double c) { vibratoCents_ = c; }
+    /// The sample engine's sample (nullptr = silent). Voices reading the old one stop.
+    void setSample(const PSSample *s, double rootNote) {
+        if (s != source_.sample)
+            for (auto &v : voices_)
+                if (patch_.engine == PS_ENGINE_SAMPLE) { v.stage = SynthVoice::Off; v.note = -1; }
+        source_.sample = s;
+        source_.rootHz = noteToHz(rootNote);
+    }
+    /// Drops a sample that is about to be freed.
+    void forget(const PSSample *s) { if (source_.sample == s) setSample(nullptr, 60); }
 
     // Notes --------------------------------------------------------------------
     /// Called for every note on/off (note -1 = all off), e.g. to send MIDI.
@@ -197,6 +231,7 @@ public:
             const uint32_t seed = static_cast<uint32_t>(clock_ * 2654435761u + note);
             v.gen[0].reset(0.0, seed);
             v.gen[1].reset(0.25, seed ^ 0xA5A5A5A5u); // offset partner so the pair isn't phase-locked
+            v.gen[1].channel = 1;
             v.env = 0;
         }
         v.note = note;
@@ -252,8 +287,9 @@ public:
                 const double fmScale = patch_.fmIndexSustain + (1.0 - patch_.fmIndexSustain) * v.fmEnv;
                 v.fmEnv *= fmDecayCoef_;
 
-                const double a = v.gen[0].next(patch_, hzL, sr_, fmScale);
-                const double b = v.gen[1].next(patch_, hzR, sr_, fmScale);
+                const double a = v.gen[0].next(patch_, hzL, sr_, fmScale, source_);
+                const double b = v.gen[1].next(patch_, hzR, sr_, fmScale, source_);
+                if (v.gen[0].done && v.gen[1].done) { v.stage = SynthVoice::Off; v.note = -1; continue; }
                 const double g = gainBase * v.velocity * v.env;
                 float *outL = v.bass ? bassL : chordL;
                 float *outR = v.bass ? bassR : chordR;
@@ -336,6 +372,7 @@ private:
     NoteHook hook_;
     std::array<SynthVoice, kVoices> voices_{};
     PSPatch patch_{};
+    SampleSource source_;
     uint64_t clock_ = 0;
     double attackMs_ = 100, decayMs_ = 100, sustain_ = 1.0, releaseMs_ = 1000;
     double attackInc_ = 0, decayCoef_ = 0, releaseCoef_ = 0, fmDecayCoef_ = 1;

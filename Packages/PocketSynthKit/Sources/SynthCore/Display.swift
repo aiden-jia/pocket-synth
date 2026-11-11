@@ -55,6 +55,26 @@ public struct DisplayModel: Equatable, Sendable {
     /// Seq mode: the current page of steps.
     public var steps: [StepCell]? = nil
     public var looper: LooperDisplay? = nil
+    /// Tuner and Game draw their own screens.
+    public var tool: ToolScreen? = nil
+}
+
+public enum ToolScreen: Equatable, Sendable {
+    /// nil reading = no pitch heard.
+    case tuner(TunerReading?)
+    case game(GameScreen)
+}
+
+/// Game mode's song picker / results (the running lane comes from `gameLane(at:)`).
+public struct GameScreen: Equatable, Sendable {
+    public var running: Bool
+    public var song: String
+    public var tier: Int
+    public var bpm: Int
+    public var speedPercent: Int
+    public var best: Int?
+    /// After a run: grade, accuracy and counts.
+    public var result: String?
 }
 
 public struct LoopCell: Equatable, Sendable {

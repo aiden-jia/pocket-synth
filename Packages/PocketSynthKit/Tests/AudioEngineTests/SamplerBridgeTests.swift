@@ -89,6 +89,7 @@ struct SamplerBridgeTests {
     @Test func everySoundPatchIsAudibleAndBounded() {
         for (i, sound) in SoundCatalog.all.enumerated() {
             let b = EngineBridge(sampleRate: 48_000)
+            if i == SoundCatalog.micSampleIndex { giveMicSample(b) }
             b.apply(.sound(index: i, engine: sound.engine))
             b.apply(.envelope(sound.defaultEnvelope.envelope))
             let v = Voicing(notes: [60, 64, 67], bass: 36, chord: .init(root: 0, type: .major), name: "C")
@@ -99,6 +100,17 @@ struct SamplerBridgeTests {
             let loudest = stride(from: 0, to: out.count - 2400, by: 1200).map { rms(out[$0..<$0 + 2400]) }.max()!
             #expect(loudest > 0.01, "\(sound.name) is silent")
         }
+    }
+
+    /// A 1 s A3 take for the Mic Sample sound (Synth Mic mode).
+    func giveMicSample(_ b: EngineBridge) {
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("mic-\(UUID().uuidString).wav")
+        defer { try? FileManager.default.removeItem(at: url) }
+        let tone = (0..<48_000).map { Float(0.6 * sin(2 * Double.pi * 220 * Double($0) / 48_000)) }
+        try! SampleLibrary.writeWAV([tone], sampleRate: 48_000, to: url)
+        let id = SampleID("mic")
+        try! b.samples.load(id: id, from: url)
+        b.setSynthSample(id, root: 57)
     }
 
     @Test func fxAndMixerCommandsReachTheEngine() {

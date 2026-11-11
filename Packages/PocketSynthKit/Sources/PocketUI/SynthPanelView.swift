@@ -12,11 +12,20 @@ struct SynthPanelView: View {
             let layout = SynthSurfaceLayout(size: geo.size)
             let synth = model.synth
             ZStack(alignment: .topLeading) {
-                StatusScreen(display: synth.display)
+                let display = synth.display
+                StatusScreen(display: display)
                     .place(layout.screen)
-                LooperMenu(model: model)
-                    .position(x: layout.screen.maxX - 24, y: layout.screen.maxY - 22)
-                    .zIndex(1)
+                if case .game(let g)? = display.tool, g.running {
+                    GameLaneView(columns: layout.pads.map { $0.midX - layout.screen.minX },
+                                 lane: { model.synth.gameLane(at: $0) })
+                        .place(layout.screen)
+                        .allowsHitTesting(false)
+                }
+                if !synth.state.mode.isTool { // tools hide the looper
+                    LooperMenu(model: model)
+                        .position(x: layout.screen.maxX - 24, y: layout.screen.maxY - 22)
+                        .zIndex(1)
+                }
 
                 ForEach(MenuKey.allCases, id: \.self) { k in
                     MenuKeyView(key: k, held: synth.isMenuHeld.contains(k))
@@ -85,6 +94,8 @@ struct StatusScreen: View {
 
                 if let menu = display.menu {
                     MenuStrip(menu: menu)
+                } else if let tool = display.tool {
+                    ToolContent(tool: tool, detail: display.detail)
                 } else {
                     Spacer(minLength: 0)
                     Text(display.chordName ?? "—")

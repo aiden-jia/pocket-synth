@@ -68,6 +68,11 @@ public struct SynthState: Hashable, Codable, Sendable {
     public var metronome = true
     public var metronomeLevel = 0.6
 
+    // Tools (phase 6)
+    public var trainerLevel: TrainerLevel = .intervalUp
+    /// Pitch (fractional MIDI note) of the Mic-mode sample; nil = none recorded yet.
+    public var micSampleRoot: Double?
+
     // Settings
     public var midiIn = false
     public var midiOut = true
@@ -165,7 +170,10 @@ public enum SettingRow: Hashable, CaseIterable, Sendable {
 
     public func set(_ i: Int, in s: inout SynthState) {
         switch self {
-        case .fx(let k): s.fx[k] = i == 0 ? nil : i
+        case .fx(let k):
+            s.fx[k] = i == 0 ? nil : i
+            // Turning the vocoder on forces chorus, flanger and delay off (SYNTH_SPEC §3.1).
+            if k == .vocoder, i != 0 { s.fx[.chorus] = nil; s.fx[.flanger] = nil; s.fx[.delay] = nil }
         case .voice: s.voiceCount = VoiceCount.allCases[i]
         case .envelope:
             s.envelopePreset = EnvelopePreset.allCases[i]

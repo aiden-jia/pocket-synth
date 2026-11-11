@@ -329,6 +329,71 @@ private:
     OnePole hp_;
 };
 
+// MARK: - Vocoder (12-band channel vocoder, SYNTH_SPEC §3.1)
+//
+// The synth (carrier) goes through 12 band-pass filters; each band's level follows the
+// same band of the modulator (the mic, or the loops). A little of the modulator's top end
+// is mixed back in so consonants stay intelligible.
+
+class Vocoder {
+public:
+    static constexpr int kBands = 12;
+
+    explicit Vocoder(double sr) : sr_(sr) {
+        const double lo = 160, hi = 6400;
+        for (int b = 0; b < kBands; ++b) {
+            const double fc = lo * std::pow(hi / lo, b / double(kBands - 1));
+            g_[b] = SVF::gFor(fc, sr);
+        }
+        attack_ = 1.0 - std::exp(-1.0 / (0.004 * sr));
+        release_ = 1.0 - std::exp(-1.0 / (0.035 * sr));
+        hiss_.setHz(5000, sr);
+    }
+
+    /// 0 = off, 1 = mic, 2 = loop (the caller picks the modulator).
+    void setType(int t) {
+        if (t != type_) reset();
+        type_ = std::clamp(t, 0, 2);
+    }
+    int type() const { return type_; }
+
+    /// Replaces L/R (the carrier) with the vocoded signal. `mod` is mono, n frames.
+    void process(float *L, float *R, const float *mod, int n) {
+        if (type_ == 0) return;
+        constexpr double k = 1.0 / 5.0; // band Q 5
+        for (int i = 0; i < n; ++i) {
+            const double m = mod[i];
+            double outL = 0, outR = 0;
+            for (int b = 0; b < kBands; ++b) {
+                modF_[b].process(m, g_[b], k);
+                const double r = std::fabs(modF_[b].bp);
+                env_[b] += (r - env_[b]) * (r > env_[b] ? attack_ : release_);
+                carL_[b].process(L[i], g_[b], k);
+                carR_[b].process(R[i], g_[b], k);
+                outL += carL_[b].bp * env_[b];
+                outR += carR_[b].bp * env_[b];
+            }
+            const double air = hiss_.highpass(m) * 0.25;
+            L[i] = static_cast<float>(outL * kGain + air);
+            R[i] = static_cast<float>(outR * kGain + air);
+        }
+    }
+
+private:
+    static constexpr double kGain = 8.0;
+
+    void reset() {
+        for (int b = 0; b < kBands; ++b) { modF_[b].reset(); carL_[b].reset(); carR_[b].reset(); env_[b] = 0; }
+        hiss_.z = 0;
+    }
+
+    double sr_, attack_ = 0, release_ = 0;
+    int type_ = 0;
+    std::array<double, kBands> g_{}, env_{};
+    std::array<SVF, kBands> modF_, carL_, carR_;
+    OnePole hiss_;
+};
+
 // MARK: - Master low-pass (the synth's Filter row + wheel cutoff)
 
 class LowPass {

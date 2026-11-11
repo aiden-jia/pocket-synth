@@ -96,7 +96,9 @@ public final class EngineBridge {
                 set(param, Double(index))
             } else if kind == .lfo {
                 set(PS_PARAM_VIBRATO_CENTS, [0, 10, 25, 50][min(index, 3)])
-            } // vocoder: phase 6
+            } else if kind == .vocoder {
+                set(PS_PARAM_FX_VOCODER, Double(min(index, 2)))
+            }
         case .mode(let m):
             ps_synth_set_performer(engine, Int32(Self.performer(for: m).rawValue))
         case .rhythm(let strum, let pattern, let layer, let arpRate, let repeatRate, let seqRate):
@@ -313,6 +315,13 @@ public final class EngineBridge {
             ps_keygroup_set_zone(engine, Int32(index), Int32(zi), &zone)
         }
         ps_keygroup_set_program(engine, Int32(index), Int32(zones.count), &common)
+    }
+
+    // MARK: Mic sample (Synth Mic mode)
+
+    /// The sample the "Mic Sample" sound plays; `root` is its pitch as a MIDI note.
+    public func setSynthSample(_ id: SampleID?, root: Double) {
+        ps_synth_set_sample(engine, id.flatMap { samples.handle(for: $0) }, Float(root))
     }
 
     // MARK: Telemetry

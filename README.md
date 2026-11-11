@@ -9,7 +9,7 @@ Personal project. See [docs/DESIGN.md](docs/DESIGN.md) for the architecture, and
 
 ## Status
 
-Phases 0–4 (see DESIGN §10) are done; phase 5 is built and tested, with simulator checks still partial.
+Phases 0–5 (see DESIGN §10) are done. Phase 6 is in progress: the synth's Tuner, Mic, Trainer and Game modes and the vocoder are built and tested. Game and Trainer are checked in the simulator; the mic features are not checked yet.
 
 | Area | State |
 |---|---|
@@ -26,11 +26,12 @@ Phases 0–4 (see DESIGN §10) are done; phase 5 is built and tested, with simul
 | Sampling: resample master / synth / sampler, or the mic; threshold arm, pre-roll, meter, trim silence, auto-assign | done, tested; resampling checked in the simulator (mic not yet) |
 | Chop: hits (transient detection), regions, BPM grid (with tempo detection), manual markers; convert to pads, new samples, or pads + sequence | done, tested, checked in the simulator |
 | Processes: normalize, gain, fades, crop/delete/silence, reverse, trim silence, pitch shift, time stretch, bit crush, mono, remove DC — each an undoable new version | done, tested |
+| Phase 6 (so far): Tuner, Mic mode (pitched sample in Lead), ear Trainer (6 levels), rhythm Game (10 songs, 5 tiers, practice speed), 12-band vocoder (MIC / LOOP) | built, unit- and render-tested; Game and Trainer checked in the simulator; Tuner, Mic and vocoder not yet checked with a real mic |
 | Phase 5: MIDI in/out/clock (incl. looper MIDI), multi-track sequencer (drum / keygroup / synth / MIDI tracks), keygroups + auto-map, Pad Perform, List & Step editors, Song mode + Next Sequence, submixes / returns / XY FX, automation + Q-Links, export (WAV, stems, MIDI file) | built, unit-tested; only partly checked in the simulator |
 
 Synth sounds named after acoustic instruments are synthesized stand-ins for now.
 
-The first time you sample from the mic, iOS asks for microphone access (it's only switched on while the Sample view uses it).
+The first time you use the mic, iOS asks for microphone access. It's only switched on while something uses it: the Sample view with the mic source, the Tuner and Mic modes, or the vocoder set to MIC.
 
 ## Run the tests (works with just the Command Line Tools)
 

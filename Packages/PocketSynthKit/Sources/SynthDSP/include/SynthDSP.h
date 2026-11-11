@@ -47,6 +47,7 @@ typedef enum {
     PS_PARAM_MIDI_OUT,        // 0 / 1: send notes (live, drums, MIDI tracks, loops)
     PS_PARAM_MIDI_CLOCK_OUT,  // 0 / 1: 24 PPQN clock + start/stop
     PS_PARAM_MIDI_CHANNEL,    // 0...15: channel for live synth playing
+    PS_PARAM_FX_VOCODER,      // 0 = off, 1 = MIC (input is the modulator), 2 = LOOP (the loops are)
     PS_PARAM_COUNT
 } PSParam;
 
@@ -64,6 +65,7 @@ typedef enum {
     PS_ENGINE_FM,          // 2-operator FM
     PS_ENGINE_NOISE,       // noise only (pitched via a resonant filter)
     PS_ENGINE_HYBRID,      // analog oscillators + noise layer
+    PS_ENGINE_SAMPLE,      // plays the sample set with ps_synth_set_sample (one-shot, pitched)
 } PSEngineKind;
 
 typedef enum {
@@ -397,6 +399,11 @@ int ps_recorder_state(const PSEngine *engine);
 int ps_recorder_frames(const PSEngine *engine);
 /// Peak level of the metered source (linear, decaying).
 float ps_recorder_peak(const PSEngine *engine);
+
+/// The sample the PS_ENGINE_SAMPLE patch plays (Mic mode, SYNTH_SPEC §4). `root_note` is the
+/// (fractional) MIDI pitch the sample has at its own speed. NULL clears it. To replace a
+/// sample, set the new one, then ps_engine_release_sample the old one.
+void ps_synth_set_sample(PSEngine *engine, PSSample *sample, float root_note);
 
 /// Plays part of a sample once on a hidden preview pad (slice and chop auditions).
 void ps_sampler_preview(PSEngine *engine, PSSample *sample, int start, int end, int velocity);

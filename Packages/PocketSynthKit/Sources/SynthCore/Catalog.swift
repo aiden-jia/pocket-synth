@@ -20,6 +20,14 @@ public enum SynthMode: String, CaseIterable, Codable, Sendable {
         return (1...7).contains(pad) ? modes[pad - 1] : nil
     }
 
+    /// Game, Trainer, Tuner and Mic: the pads and click do the tool's job, not the looper's.
+    public var isTool: Bool {
+        switch self {
+        case .game, .trainer, .tuner, .mic: true
+        default: false
+        }
+    }
+
     /// Modes where holding one pad then pressing another makes a slash chord.
     public var supportsSlashChords: Bool {
         [.play, .strum, .drone, .arp, .repeat].contains(self)
@@ -73,9 +81,13 @@ public enum SoundCatalog {
     public static let fmPiano = SoundInfo(name: "FM Piano", engine: .fm, defaultEnvelope: .keys)
     public static let wind = SoundInfo(name: "Wind", engine: .noise, defaultEnvelope: .long)
 
-    public static var all: [SoundInfo] { builtIn + [fmPiano, wind] }
+    /// The last Mic-mode take (SYNTH_SPEC §4), played pitched by the sample engine.
+    public static let micSample = SoundInfo(name: "Mic Sample", engine: .sample, defaultEnvelope: .touch)
+
+    public static var all: [SoundInfo] { builtIn + [fmPiano, wind, micSample] }
     public static var fmPianoIndex: Int { builtIn.count }
     public static var windIndex: Int { builtIn.count + 1 }
+    public static var micSampleIndex: Int { builtIn.count + 2 }
 
     /// S + pad quick select: Saw, Sine, FM EP, FM Piano, Strings, Clarinet, FM Sweep.
     public static func quickSelect(pad: Int) -> Int? {

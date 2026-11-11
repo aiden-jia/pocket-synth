@@ -43,6 +43,7 @@ public enum SoundPatches {
         case "Sea Pad": return hybrid(.sine, noise: .pink, level: 0.3, cutoff: 800, q: 2, noiseKind: .resonant)
         case "FM Piano": return fm(ratio: 1, index: 3, decay: 500, sustain: 0.1, feedback: 0.1)
         case "Wind": return noise(.resonant, cutoff: 0, q: 8, gain: 1.6)
+        case "Mic Sample": return base(PS_ENGINE_SAMPLE, gain: 2.5)
         default: return analog(.saw)
         }
     }

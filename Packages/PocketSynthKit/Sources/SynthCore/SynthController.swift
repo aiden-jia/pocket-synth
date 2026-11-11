@@ -31,6 +31,30 @@ public final class SynthController {
     /// Step the engine is playing (set by the app from engine telemetry).
     public var seqPlayhead: Int?
 
+    // Tools (phase 6): Tuner, Mic, Trainer, Game.
+    /// Tuner mode: the latest (smoothed) reading from the app.
+    public private(set) var tuner: TunerReading?
+    /// Mic mode: pad 1 is held and the take is recording.
+    public private(set) var micRecording = false
+    public private(set) var trainer: EarTrainer
+    /// Trainer: the expected answers, shown once a question is answered.
+    public private(set) var trainerReveal: [String]?
+    public private(set) var gameSong = 0
+    public private(set) var gameSpeed = 1.0
+    public private(set) var game: GameRun?
+    public private(set) var gameResult: GameRun?
+    /// Best accuracy by song name (full-speed runs only).
+    public private(set) var gameBest: [String: Int]
+    /// Asks the app to start (true) or stop (false) a Mic-mode take.
+    @ObservationIgnored public var onMicRecord: (Bool) -> Void = { _ in }
+    /// Seconds from sending a command to hearing it (Game lines the chart up with the drums).
+    @ObservationIgnored public var outputLatency = 0.0
+    @ObservationIgnored private var scheduled: [(at: Double, command: EngineCommand)] = []
+    @ObservationIgnored private var nextQuestionAt: Double?
+    @ObservationIgnored private var answerStick: StickDirection?
+    @ObservationIgnored private var micStartedAt: Double?
+    public static let micMaxSeconds = 3.0
+
     @ObservationIgnored public var send: (EngineCommand) -> Void
     /// Called after the session (state or presets) changes, for saving.
     @ObservationIgnored public var onSessionChange: (SynthSession) -> Void = { _ in }
@@ -64,8 +88,12 @@ public final class SynthController {
     public static let countInBeats = 4
 
     public init(state: SynthState = SynthState(), presets: [SynthState?] = Array(repeating: nil, count: 4),
-                seed: UInt64 = 0x5EED, send: @escaping (EngineCommand) -> Void = { _ in }) {
+                gameBest: [String: Int] = [:], seed: UInt64 = 0x5EED,
+                send: @escaping (EngineCommand) -> Void = { _ in }) {
         self.state = state
+        self.gameBest = gameBest
+        trainer = EarTrainer(level: state.trainerLevel, seed: seed ^ 0x7A)
+        if state.mode == .trainer { nextQuestionAt = 0 } // relaunched in Trainer: ask on the first tick
         self.presets = Array((presets + Array(repeating: nil, count: 4)).prefix(4))
         self.send = send
         self.rng = SplitMix64(seed: seed)
@@ -75,7 +103,7 @@ public final class SynthController {
     public var session: SynthSession {
         var s = state
         s.locks.removeAll()
-        return SynthSession(state: s, presets: presets)
+        return SynthSession(state: s, presets: presets, gameBest: gameBest)
     }
 
     /// Pushes the full current state to the engine (call once after wiring `send`).
@@ -133,6 +161,13 @@ public final class SynthController {
     public func tick(at time: Double) {
         now = time
         if let t0 = clickDownAt, !clickConsumed, time - t0 >= Self.clearHold { clickHeldLong() }
+        fireScheduled(upTo: time)
+        if state.mode == .trainer, let t = nextQuestionAt, time >= t {
+            nextQuestionAt = nil
+            askQuestion()
+        }
+        if micRecording, let t0 = micStartedAt, time - t0 >= Self.micMaxSeconds { stopMic() }
+        if game != nil { advanceGame(time) }
         if let t = toast, time >= t.until { toast = nil }
         if dialog == nil, time - lastActivity > Self.menuIdleTimeout {
             switch openMenu {
@@ -155,9 +190,21 @@ public final class SynthController {
         heldPads.removeAll { $0 == pad }
         heldPads.append(pad)
 
-        if let t = looper.freeArmed, state.mode != .mixer, state.mode != .seq { startFreeTake(t) }
+        if let t = looper.freeArmed, state.mode != .mixer, state.mode != .seq, !state.mode.isTool {
+            startFreeTake(t)
+        }
 
         switch state.mode {
+        case .tuner:
+            return
+        case .mic:
+            if pad == 1 { startMic() } else { showToast("HOLD PAD 1 TO RECORD") }
+            return
+        case .trainer:
+            trainerPadDown(pad)
+            return
+        case .game:
+            game?.hit(pad: pad, at: now)
         case .mixer:
             mixerComboPads.remove(pad) // mute / metronome happen on release
             return
@@ -188,6 +235,18 @@ public final class SynthController {
 
     private func padUp(_ pad: Int) {
         heldPads.removeAll { $0 == pad }
+        switch state.mode {
+        case .tuner:
+            return
+        case .mic:
+            if pad == 1, micRecording { stopMic() }
+            return
+        case .trainer:
+            trainerPadUp(pad)
+            return
+        default:
+            break
+        }
         if state.mode == .drums || state.mode == .beat {
             if let v = drumRepeatVoice, v == DrumVoice.forPad(pad) { stopDrumRepeat() }
             return
@@ -244,6 +303,20 @@ public final class SynthController {
                 if dir == .up || dir == .down { stepVariation(dir == .up ? 1 : -1) }
                 return
             }
+        case .trainer:
+            if let pad = heldPads.last {
+                if let dir { answerStick = dir }
+                if sounding[pad] != nil, !trainer.level.isInterval { voiceTrainerPad(pad) }
+                return
+            }
+            if openMenu == nil { return }
+        case .game:
+            if game == nil, heldPads.isEmpty, openMenu == nil {
+                if let dir { gameStick(dir) }
+                return
+            }
+        case .tuner, .mic:
+            if openMenu == nil { return }
         default:
             break
         }
@@ -517,6 +590,9 @@ public final class SynthController {
         switch state.mode {
         case .seq: seqClick()
         case .mixer: setLoopsPaused(!looper.paused)
+        case .trainer: trainerClick()
+        case .game: gameClick()
+        case .tuner, .mic: break
         default: looperClick()
         }
     }
@@ -638,6 +714,13 @@ public final class SynthController {
             showToast("STEP \(state.seqRate.label)")
         case .beat:
             stepVariation(1)
+        case .trainer:
+            let all = TrainerLevel.allCases
+            mutate { $0.trainerLevel = all[$0.trainerLevel.rawValue % all.count] }
+            showToast("LV \(state.trainerLevel.rawValue) \(state.trainerLevel.label)")
+        case .game:
+            gameSpeed = gameSpeed <= 0.55 ? 1 : ((gameSpeed - 0.1) * 10).rounded() / 10
+            showToast("SPEED \(Int((gameSpeed * 100).rounded()))%")
         default:
             break
         }
@@ -655,6 +738,8 @@ public final class SynthController {
             guard var p = presets[slot] else { return }
             p.volume = state.volume    // device-level settings are not part of a preset
             p.midiIn = state.midiIn
+            p.micSampleRoot = state.micSampleRoot // the take on disk is the latest one
+            if p.soundIndex == SoundCatalog.micSampleIndex, p.micSampleRoot == nil { p.selectSound(0) }
             mutate { $0 = p }
             showToast("LOADED P\(slot + 1)")
         }
@@ -701,6 +786,223 @@ public final class SynthController {
         }
     }
 
+    // MARK: - Tools: shared
+
+    /// Engine commands due later (Trainer playback). Fired from `tick`, so ~30 ms granular.
+    private func schedule(_ c: EngineCommand, at t: Double) {
+        scheduled.append((t, c))
+        scheduled.sort { $0.at < $1.at }
+    }
+
+    private func fireScheduled(upTo time: Double) {
+        while let first = scheduled.first, first.at <= time {
+            scheduled.removeFirst()
+            send(first.command)
+        }
+    }
+
+    private func clearScheduled() {
+        guard !scheduled.isEmpty else { return }
+        scheduled.removeAll()
+        send(.chord(slot: 0, voicing: nil))
+    }
+
+    /// Mode change away from (or into) a tool: stop what it was doing.
+    private func leaveTool(_ old: SynthMode) {
+        clearScheduled()
+        trainerReveal = nil
+        answerStick = nil
+        nextQuestionAt = state.mode == .trainer ? now + 0.6 : nil
+        if old == .trainer { trainer.setLevel(state.trainerLevel) } // drops the open question
+        if micRecording {
+            micRecording = false
+            micStartedAt = nil
+            onMicRecord(false)
+        }
+        gameResult = nil
+        if old == .tuner { tuner = nil }
+    }
+
+    /// A short message from the app (e.g. "MIC ACCESS OFF").
+    public func notify(_ text: String) { showToast(text) }
+
+    // MARK: - Tuner
+
+    public func setTunerReading(_ r: TunerReading?) {
+        if r != tuner { tuner = r }
+    }
+
+    // MARK: - Mic mode
+
+    private func startMic() {
+        guard !micRecording else { return }
+        micRecording = true
+        micStartedAt = now
+        lastChordName = "● REC"
+        onMicRecord(true)
+    }
+
+    private func stopMic() {
+        guard micRecording else { return }
+        micRecording = false
+        micStartedAt = nil
+        lastChordName = "…"
+        onMicRecord(false)
+    }
+
+    /// The app finished a Mic-mode take (`root` = detected pitch, nil = none): it plays as
+    /// the Mic Sample sound in Lead mode.
+    public func micSampleReady(root: Double?) {
+        let r = root ?? 60
+        mutate { s in
+            s.micSampleRoot = r
+            s.selectSound(SoundCatalog.micSampleIndex)
+            s.mode = .lead
+        }
+        lastChordName = PitchName.noteName(Int(r.rounded()))
+        showToast(root == nil ? "NO PITCH: PLAYS AS C" : "MIC SAMPLE → LEAD")
+    }
+
+    /// The take on disk is gone: drop the sound.
+    public func forgetMicSample() {
+        mutate { s in
+            s.micSampleRoot = nil
+            if s.soundIndex == SoundCatalog.micSampleIndex { s.selectSound(0) }
+        }
+    }
+
+    public func micFailed(_ message: String) {
+        micRecording = false
+        micStartedAt = nil
+        lastChordName = "MIC"
+        showToast(message)
+    }
+
+    // MARK: - Trainer mode
+
+    private func askQuestion() {
+        trainerReveal = nil
+        trainer.next(state: state)
+        playQuestion()
+    }
+
+    /// Plays the open question on slot 0 (pads 1–7 stay free for answering).
+    private func playQuestion() {
+        guard let q = trainer.question else { return }
+        play(q.playback, step: q.level.isInterval ? 0.8 : q.level.answerCount > 1 ? 1.0 : 1.2)
+    }
+
+    private func play(_ voicings: [Voicing], step: Double, after delay: Double = 0.1) {
+        clearScheduled()
+        var t = now + delay
+        for v in voicings {
+            schedule(.chord(slot: 0, voicing: v), at: t)
+            schedule(.chord(slot: 0, voicing: nil), at: t + step * 0.8)
+            t += step
+        }
+    }
+
+    private func trainerPadDown(_ pad: Int) {
+        answerStick = stick
+        voiceTrainerPad(pad)
+        if !trainer.level.usesStick { submit(TrainerAnswer(pad: pad)) }
+    }
+
+    private func trainerPadUp(_ pad: Int) {
+        release(pad)
+        if trainer.level.usesStick { submit(TrainerAnswer(pad: pad, stick: answerStick)) }
+        answerStick = nil
+    }
+
+    private func voiceTrainerPad(_ pad: Int) {
+        let a = TrainerAnswer(pad: pad, stick: trainer.level.isInterval ? nil : stick)
+        let v = EarTrainer.answerVoicing(a, level: trainer.level, state: state)
+        sounding[pad] = v
+        send(.chord(slot: pad, voicing: v))
+    }
+
+    private func submit(_ a: TrainerAnswer) {
+        guard let q = trainer.question else { return }
+        switch trainer.answer(a, state: state) {
+        case .right?:
+            trainerReveal = EarTrainer.names(q, state: state)
+            showToast("✓ RIGHT")
+            nextQuestionAt = now + 1.4
+        case .wrong?:
+            trainerReveal = EarTrainer.names(q, state: state)
+            showToast("✗ WRONG")
+            // Play the right answer, then move on.
+            let answers = q.answers.map { EarTrainer.answerVoicing($0, level: q.level, state: state) }
+            let notes = q.targetNote.map { [EarTrainer.noteVoicing($0)] } ?? answers
+            play(notes, step: 0.9, after: 0.5)
+            nextQuestionAt = now + 0.5 + 0.9 * Double(notes.count) + 0.8
+        case .partial?, nil:
+            break
+        }
+    }
+
+    /// Click: hear the question again (or skip to a new one after an answer).
+    private func trainerClick() {
+        if trainer.question != nil {
+            playQuestion()
+        } else {
+            nextQuestionAt = nil
+            askQuestion()
+        }
+    }
+
+    // MARK: - Game mode
+
+    /// Idle stick: ←/→ song, ↑/↓ practice speed (50–100 %).
+    private func gameStick(_ dir: StickDirection) {
+        let n = GameSongs.all.count
+        switch dir {
+        case .right: gameSong = (gameSong + 1) % n
+        case .left: gameSong = (gameSong + n - 1) % n
+        case .up: gameSpeed = min(1, ((gameSpeed + 0.1) * 10).rounded() / 10)
+        case .down: gameSpeed = max(0.5, ((gameSpeed - 0.1) * 10).rounded() / 10)
+        default: return
+        }
+        gameResult = nil
+    }
+
+    private func gameClick() {
+        if game != nil { endGame(completed: false) } else { startGame() }
+    }
+
+    /// The drums start right away; the chart's beat 0 is when they're heard.
+    private func startGame() {
+        let song = GameSongs.all[gameSong]
+        let run = GameRun(song: song, speed: gameSpeed, startTime: now + outputLatency)
+        game = run
+        gameResult = nil
+        send(.tempo(run.bpm))
+        send(.beat(.make(song.style, .original), playing: true))
+    }
+
+    private func advanceGame(_ t: Double) {
+        guard var g = game else { return }
+        if g.expire(at: t) > 0 { game = g }
+        if g.isFinished(at: t) { endGame(completed: true) }
+    }
+
+    private func endGame(completed: Bool) {
+        guard let g = game else { return }
+        game = nil
+        send(.beat(nil, playing: false))
+        send(.tempo(state.bpm))
+        guard completed else { return showToast("STOPPED") }
+        gameResult = g
+        if g.speed >= 0.999, g.accuracy > gameBest[g.song.name] ?? -1 {
+            gameBest[g.song.name] = g.accuracy
+            onSessionChange(session)
+        }
+        showToast("\(g.grade) · \(g.accuracy)%")
+    }
+
+    /// The scrolling chart at `time` (same clock as the events), while a song runs.
+    public func gameLane(at time: Double) -> GameLane? { game?.lane(at: time) }
+
     // MARK: - State plumbing
 
     /// Applies a state change, emits engine commands for it, and re-voices held chords
@@ -719,8 +1021,18 @@ public final class SynthController {
             seqPlayhead = nil
             seqPush = nil
             drumRepeatVoice = nil
+            leaveTool(old.mode)
         }
+        if old.trainerLevel != state.trainerLevel {
+            trainer.setLevel(state.trainerLevel)
+            trainerReveal = nil
+            clearScheduled()
+            if state.mode == .trainer { nextQuestionAt = now + 0.6 }
+        }
+        let endedGame = old.mode != state.mode && game != nil
+        if endedGame { game = nil }
         for c in EngineCommand.diff(from: old, to: state) { send(c) }
+        if endedGame, old.bpm == state.bpm { send(.tempo(state.bpm)) } // the game ran at its own tempo
         if Self.harmonyChanged(old, state) {
             for pad in sounding.keys.sorted() { sound(pad) }
         }
@@ -917,14 +1229,64 @@ public final class SynthController {
         DisplayModel(
             status: "\(state.key.name) \(state.scale.displayName) · \(state.stickMode.shortName) · \(state.mode.label)",
             bpm: Int(state.bpm),
-            chordName: lastChordName,
+            chordName: toolChordName ?? lastChordName,
             menu: menuDisplay,
             dialog: dialog.map { "\($0.text)   ↑ YES · ↓ NO" },
             toast: toast?.text,
             detail: modeDetail,
-            steps: state.mode == .seq ? seqCells : nil,
-            looper: looperDisplay
+            steps: state.mode == .seq ? seqCells : state.mode == .trainer ? trainerCells : nil,
+            looper: state.mode.isTool ? nil : looperDisplay,
+            tool: toolScreen
         )
+    }
+
+    private var toolChordName: String? {
+        switch state.mode {
+        case .trainer:
+            if let r = trainerReveal { return r.joined(separator: " → ") }
+            return trainer.question == nil ? "…" : "?"
+        case .mic:
+            return micRecording ? "● REC" : nil
+        default:
+            return nil
+        }
+    }
+
+    private var toolScreen: ToolScreen? {
+        switch state.mode {
+        case .tuner:
+            return .tuner(tuner)
+        case .game:
+            let song = GameSongs.all[gameSong]
+            let result = gameResult.map {
+                "\($0.grade) · \($0.accuracy)% · \($0.count(.perfect)) PERFECT · \($0.count(.good)) GOOD · "
+                    + "\($0.count(.miss)) MISS · MAX COMBO \($0.maxCombo)"
+            }
+            return .game(GameScreen(running: game != nil, song: song.name, tier: song.tier,
+                                    bpm: Int((song.bpm * gameSpeed).rounded()),
+                                    speedPercent: Int((gameSpeed * 100).rounded()),
+                                    best: gameBest[song.name], result: result))
+        default:
+            return nil
+        }
+    }
+
+    /// Progression levels: one cell per chord to answer.
+    private var trainerCells: [StepCell]? {
+        let level = trainer.level
+        guard level.answerCount > 1 else { return nil }
+        let given = trainer.question == nil ? [] : trainer.given
+        return (0..<level.answerCount).map { i in
+            let label: String
+            if let r = trainerReveal, i < r.count {
+                label = r[i]
+            } else if i < given.count {
+                label = EarTrainer.answerVoicing(given[i], level: level, state: state).name
+            } else {
+                label = "?"
+            }
+            return StepCell(index: i, label: label, isCursor: trainer.question != nil && i == given.count, isPlaying: false)
+        }
     }
 
     private var looperDisplay: LooperDisplay {
@@ -957,6 +1319,16 @@ public final class SynthController {
             return "STRUM \(state.strumSpeed.label)"
         case .mixer:
             return "PAD 1–6 MUTE · +S SOLO · +WHEEL LEVEL · 7 CLICK " + (state.metronome ? "ON" : "OFF")
+        case .trainer:
+            let t = trainer
+            return "LV\(t.level.rawValue) \(t.level.label) · \(t.correct)/\(t.asked) · STREAK \(t.streak) · CLICK REPLAY"
+                + (t.level.usesStick ? " · PAD+STICK, RELEASE" : "")
+        case .mic:
+            if micRecording { return "RECORDING · RELEASE PAD 1 (MAX 3 s)" }
+            let root = state.micSampleRoot.map { " · LAST: " + PitchName.noteName(Int($0.rounded())) } ?? ""
+            return "HOLD PAD 1 TO RECORD" + root
+        case .tuner:
+            return "PLAY OR SING A NOTE"
         default:
             return nil
         }
@@ -993,6 +1365,8 @@ public final class SynthController {
             case .strum: "↓ \(state.strumSpeed.label) · "
             case .arp: "↓ \(state.arpRate.label) · "
             case .repeat: "↓ \(state.repeatRate.label) · "
+            case .trainer: "↓ LV\(state.trainerLevel.rawValue) · "
+            case .game: "↓ SPEED \(Int((gameSpeed * 100).rounded()))% · "
             default: ""
             }
             return MenuDisplay(title: "MODE", items: availableModes.map(\.label), selected: h,

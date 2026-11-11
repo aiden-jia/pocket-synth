@@ -31,7 +31,7 @@ struct Command {
         Performer, Rhythm, Slot, SeqStep, Seq, DrumHit, DrumKit, DrumRepeat, Beat, QueueSequence,
         LoopFirst, LoopStopFirst, LoopArm, LoopClear, LoopClearAll, LoopPause, LoopGain,
         RecArm, RecStop, RecRelease, MeterSource, Preview,
-        KeygroupProgram, KeygroupZone, LiveNote, MixSubmix, MixReturn, MixXY,
+        KeygroupProgram, KeygroupZone, LiveNote, MixSubmix, MixReturn, MixXY, SynthSample,
     } type;
     int32_t a = 0;  // note / param / pad / slot / voice
     float b = 0;    // velocity / value / tune
@@ -88,6 +88,7 @@ struct PSEngine {
     Drive drive;
     Tape tape;
     Reverb reverb;
+    Vocoder vocoder;
     Click click;
     Looper looper;
     Recorder recorder;
@@ -148,11 +149,15 @@ struct PSEngine {
     std::array<std::array<float, kSub>, PS_SUBMIXES> subL{}, subR{};
     std::array<std::array<float, kSub>, PS_RETURNS> retL{}, retR{};
     std::array<float, 512> inL{}, inR{};
+    // Vocoder modulator: mic audio (mono) waiting to be used, and the last block of loops.
+    std::vector<float> micFifo = std::vector<float>(8192, 0.0f);
+    size_t micRead = 0, micCount = 0;
+    std::array<float, kSub> modBuf{}, lastLoop{};
 
     explicit PSEngine(double sr)
         : sampleRate(sr), synth(sr), sampler(sr), drums(sr), performer(sr, synth, drums, scheduler),
           delay(sr), filter(sr), tremolo(sr),
-          chorus(sr, kChorusTypes, 4), flanger(sr, kFlangerTypes, 4), drive(sr), tape(sr), reverb(sr),
+          chorus(sr, kChorusTypes, 4), flanger(sr, kFlangerTypes, 4), drive(sr), tape(sr), reverb(sr), vocoder(sr),
           looper(sr, Looper::Release{this, [](void *ctx, PSSample *s) {
               static_cast<PSEngine *>(ctx)->garbage.push(Garbage{s, nullptr});
           }}),
@@ -309,6 +314,7 @@ struct PSEngine {
         case PS_PARAM_MIDI_OUT: midiOutOn = value > 0.5f; break;
         case PS_PARAM_MIDI_CLOCK_OUT: midiClockOn = value > 0.5f; break;
         case PS_PARAM_MIDI_CHANNEL: liveChannel = std::clamp(static_cast<int>(value), 0, 15); break;
+        case PS_PARAM_FX_VOCODER: vocoder.setType(static_cast<int>(value)); micCount = 0; break;
         default: break;
         }
     }
@@ -525,6 +531,7 @@ struct PSEngine {
             case Command::StopAll: sampler.stopAll(); break;
             case Command::ReleaseSample:
                 sampler.forget(c.sample);
+                synth.forget(c.sample);
                 looper.forget(c.sample);
                 recorder.forget(c.sample);
                 if (!garbage.push(Garbage{c.sample, nullptr})) { /* full: leak rather than free here */ }
@@ -612,6 +619,7 @@ struct PSEngine {
                 if (c.a >= 0 && c.a < PS_RETURNS) returns[c.a].set(c.c, c.b);
                 break;
             case Command::MixXY: xy.set(c.a, c.b, static_cast<float>(c.d), c.c != 0); break;
+            case Command::SynthSample: synth.setSample(c.sample, c.b); break;
             case Command::KeygroupProgram: sampler.setKeygroupProgram(c.a, c.c, c.u.pad); break;
             case Command::KeygroupZone: sampler.setKeygroupZone(c.a, c.c, c.u.zone); break;
             case Command::LiveNote:
@@ -682,6 +690,11 @@ struct PSEngine {
         for (int i = 0; i < n; ++i) { cl[i] += bassL[i]; cr[i] += bassR[i]; }
         filter.process(cl, cr, n);
         tremolo.process(cl, cr, n);
+        if (vocoder.type() != 0) {
+            if (vocoder.type() == 1) popMic(modBuf.data(), n);
+            else std::copy_n(lastLoop.begin(), n, modBuf.begin());
+            vocoder.process(cl, cr, modBuf.data(), n);
+        }
         chorus.process(cl, cr, n);
         flanger.process(cl, cr, n);
         drive.process(cl, cr, n);
@@ -719,7 +732,11 @@ struct PSEngine {
             loopL[i] = loopR[i] = 0;
         }
         looper.process(synthL.data(), synthR.data(), loopL.data(), loopR.data(), n, beat, 1.0 / framesPerBeat());
-        for (int i = 0; i < n; ++i) { synthL[i] += loopL[i]; synthR[i] += loopR[i]; }
+        for (int i = 0; i < n; ++i) {
+            synthL[i] += loopL[i];
+            synthR[i] += loopR[i];
+            lastLoop[i] = 0.5f * (loopL[i] + loopR[i]);
+        }
 
         for (int i = 0; i < n; ++i) {
             synthLevel += (synthLevelT - synthLevel) * k;
@@ -751,8 +768,10 @@ struct PSEngine {
         drain(); // main-thread commands first (a mode change decides how MIDI in plays)
         for (uint32_t m; midiInQueue.pop(m);) midiIn(m);
         // Mic / interface input goes straight to the recorder (it arrives in bursts).
-        for (int got; (got = input.pop(inL.data(), inR.data(), static_cast<int>(inL.size()))) > 0;)
+        for (int got; (got = input.pop(inL.data(), inR.data(), static_cast<int>(inL.size()))) > 0;) {
             recorder.feed(PS_SOURCE_INPUT, inL.data(), inR.data(), got);
+            if (vocoder.type() == 1) pushMic(inL.data(), inR.data(), got);
+        }
         for (int off = 0; off < frames; off += kSub)
             renderSub(L + off, R + off, std::min(kSub, frames - off));
         synthActive.store(synth.activeVoices() + drums.activeVoices(), std::memory_order_relaxed);
@@ -770,6 +789,27 @@ struct PSEngine {
         recStateOut.store(recorder.state(), std::memory_order_relaxed);
         recFramesOut.store(recorder.frames(), std::memory_order_relaxed);
         recPeakOut.store(recorder.peak(), std::memory_order_relaxed);
+    }
+
+    /// Mic audio for the vocoder. Input arrives in bursts; keep at most ~85 ms queued.
+    void pushMic(const float *L, const float *R, int n) {
+        const size_t cap = micFifo.size();
+        const size_t maxQueued = static_cast<size_t>(0.085 * sampleRate);
+        for (int i = 0; i < n; ++i) {
+            micFifo[(micRead + micCount) % cap] = 0.5f * (L[i] + R[i]);
+            if (micCount < cap) ++micCount; else micRead = (micRead + 1) % cap;
+        }
+        while (micCount > maxQueued) { micRead = (micRead + 1) % cap; --micCount; }
+    }
+
+    void popMic(float *out, int n) {
+        const size_t cap = micFifo.size();
+        for (int i = 0; i < n; ++i) {
+            if (micCount == 0) { out[i] = 0; continue; }
+            out[i] = micFifo[micRead];
+            micRead = (micRead + 1) % cap;
+            --micCount;
+        }
     }
 
     void push(const Command &c) { commands.push(c); }
@@ -1056,6 +1096,12 @@ int ps_recorder_state(const PSEngine *engine) { return engine->recStateOut.load(
 int ps_recorder_frames(const PSEngine *engine) { return engine->recFramesOut.load(std::memory_order_relaxed); }
 
 float ps_recorder_peak(const PSEngine *engine) { return engine->recPeakOut.load(std::memory_order_relaxed); }
+
+void ps_synth_set_sample(PSEngine *engine, PSSample *sample, float root_note) {
+    Command c = make(Command::SynthSample, 0, root_note);
+    c.sample = sample;
+    engine->push(c);
+}
 
 void ps_sampler_preview(PSEngine *engine, PSSample *sample, int start, int end, int velocity) {
     Command c = make(Command::Preview, start, 0, end);

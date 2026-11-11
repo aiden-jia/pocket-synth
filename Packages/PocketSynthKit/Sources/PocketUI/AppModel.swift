@@ -37,6 +37,16 @@ public final class AppModel {
     @ObservationIgnored private var sessionSaveTask: Task<Void, Never>?
     @ObservationIgnored private var detectTask: Task<Void, Never>?
 
+    // Mic input users: the Sample view (source = mic), Tuner, Mic mode, the MIC vocoder.
+    @ObservationIgnored private let inputMonitor = InputMonitor()
+    @ObservationIgnored private var samplingUsesMic = false
+    @ObservationIgnored private var micWanted = false
+    @ObservationIgnored private var synthMicTake = false
+    @ObservationIgnored private var tunerSmoother = TunerSmoother()
+    @ObservationIgnored private var frameCount = 0
+    static let micSampleID = SampleID("synth-mic-sample")
+    var micSampleURL: URL { store.directory.appendingPathComponent("mic-sample.wav") }
+
     // Sampling (SAMPLER_SPEC §4)
     public var sampling = SamplingSettings()
     public private(set) var recorderState: EngineBridge.RecorderState = .idle
@@ -58,13 +68,17 @@ public final class AppModel {
         midi = MIDIManager(engine: bridge.engine)
         let session = SynthSession.load(from: store.directory.appendingPathComponent("synth.json"))
         synth = SynthController(state: session?.state ?? SynthState(),
-                                presets: session?.presets ?? Array(repeating: nil, count: 4))
+                                presets: session?.presets ?? Array(repeating: nil, count: 4),
+                                gameBest: session?.gameBest ?? [:])
         sampler = SamplerController(project: store.load() ?? SamplerProject())
 
         let bridge = self.bridge
         synth.send = { bridge.apply($0) }
         sampler.send = { bridge.apply($0) }
         synth.start()
+        loadMicSample()
+        synth.onMicRecord = { [weak self] in self?.synthMicRecord($0) }
+        synth.outputLatency = host.outputLatency
         loadProjectSamples()
         sampler.start()
         sampler.onChange = { [weak self] in self?.scheduleSave($0) }
@@ -113,6 +127,9 @@ public final class AppModel {
         }
         if midi.inputEnabled != synth.state.midiIn { midi.inputEnabled = synth.state.midiIn }
         synth.tick(at: Self.now)
+        updateMicInput()
+        frameCount += 1
+        if synth.state.mode == .tuner, frameCount % 3 == 0 { updateTuner() }
         pollRecorder()
         bridge.collectGarbage()
     }
@@ -257,14 +274,91 @@ public final class AppModel {
     public func setSamplingSource(_ source: SamplingSource) async {
         sampling.source = source
         samplingError = nil
-        if source == .input {
-            let bridge = self.bridge
-            let ok = await host.enableInput { l, r, n in bridge.pushInput(l, r, frames: n) }
-            if !ok { samplingError = "Microphone access is off. Turn it on in Settings › PocketSynth." }
-        } else {
-            host.disableInput()
-        }
+        samplingUsesMic = source == .input
+        updateMicInput()
         bridge.setMeterSource(source.engineSource)
+    }
+
+    // MARK: Mic input (shared)
+
+    private var synthWantsMic: Bool {
+        let s = synth.state
+        return s.mode == .tuner || s.mode == .mic || s.fxIndex(.vocoder) == 1
+    }
+
+    /// Switches the mic on while anything uses it, and off (back to playback-only) after.
+    private func updateMicInput() {
+        let want = samplingUsesMic || synthWantsMic
+        guard want != micWanted else { return }
+        micWanted = want
+        guard want else {
+            host.disableInput()
+            inputMonitor.clear()
+            return
+        }
+        let bridge = self.bridge, monitor = inputMonitor
+        Task {
+            let ok = await host.enableInput { l, r, n in
+                bridge.pushInput(l, r, frames: n)
+                monitor.push(l, r, frames: n)
+            }
+            if !ok {
+                if samplingUsesMic { samplingError = "Microphone access is off. Turn it on in Settings › PocketSynth." }
+                if synthWantsMic { synth.notify("MIC ACCESS OFF") }
+            }
+            if !micWanted { host.disableInput() } // stopped needing it while asking
+        }
+    }
+
+    // MARK: Tuner & Mic mode (SYNTH_SPEC §4)
+
+    private func updateTuner() {
+        guard host.inputEnabled else { return synth.setTunerReading(nil) }
+        let frame = inputMonitor.latest(4096)
+        let hz = PitchDetect.tunerHz(frame, sampleRate: host.inputSampleRate)
+        synth.setTunerReading(tunerSmoother.add(TunerReading(hz: hz)))
+    }
+
+    private func synthMicRecord(_ start: Bool) {
+        if start {
+            guard host.inputEnabled else { return synth.micFailed(micWanted ? "MIC NOT READY" : "MIC ACCESS OFF") }
+            guard recorderState == .idle || recorderState == .done else { return synth.micFailed("SAMPLER IS RECORDING") }
+            synthMicTake = true
+            bridge.armRecorder(source: SamplingSource.input.engineSource, threshold: 0, preRollFrames: 0,
+                               maxSeconds: SynthController.micMaxSeconds + 0.2)
+            recorderState = .recording
+        } else if synthMicTake {
+            bridge.stopRecorder()
+        }
+    }
+
+    /// Keeps 1 s from the onset, finds its pitch, saves it and plays it in Lead mode.
+    private func finishSynthMicTake() {
+        synthMicTake = false
+        recorderState = .idle
+        guard let take = bridge.takeRecording() else { return synth.micFailed("NOTHING RECORDED") }
+        let audio = AudioData(channels: [take.channels[0]], sampleRate: host.inputSampleRate)
+        guard let clip = PitchDetect.micTake(audio) else { return synth.micFailed("TOO QUIET") }
+        let root = PitchDetect.hz(clip).map(PitchDetect.midiPitch)
+        do {
+            try store.prepare()
+            try SampleLibrary.writeWAV(clip.channels, sampleRate: clip.sampleRate, to: micSampleURL)
+            try bridge.samples.load(id: Self.micSampleID, from: micSampleURL)
+            bridge.setSynthSample(Self.micSampleID, root: root ?? 60)
+            synth.micSampleReady(root: root)
+        } catch {
+            synth.micFailed("COULDN'T SAVE")
+        }
+    }
+
+    private func loadMicSample() {
+        guard let root = synth.state.micSampleRoot else { return }
+        do {
+            try bridge.samples.load(id: Self.micSampleID, from: micSampleURL)
+            bridge.setSynthSample(Self.micSampleID, root: root)
+        } catch {
+            synth.forgetMicSample()
+        }
     }
 
     public func armSampling() {
@@ -290,7 +384,8 @@ public final class AppModel {
         let secs = (Double(bridge.recorderFrames) / bridge.sampleRate * 10).rounded() / 10
         if secs != recordedSeconds { recordedSeconds = secs }
         // The engine only reports DONE once; finish the take then.
-        if st == .done, recorderState == .armed || recorderState == .recording { finishTake() }
+        if st == .done, synthMicTake { finishSynthMicTake() }
+        else if st == .done, recorderState == .armed || recorderState == .recording { finishTake() }
         else if st != recorderState, st != .done, st != .idle { recorderState = st }
     }
 

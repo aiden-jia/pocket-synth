@@ -57,3 +57,31 @@ public enum PitchDetect {
         hz(audio).map { Int((69 + 12 * log2($0 / 440)).rounded()) }
     }
 }
+
+extension PitchDetect {
+    /// Tuner: the pitch of a short input frame; nil when it's too quiet or not pitched.
+    public static func tunerHz(_ frame: [Float], sampleRate: Double, gateDB: Float = -50) -> Double? {
+        guard frame.count >= 1024 else { return nil }
+        guard vDSP.rootMeanSquare(frame) > pow(10, gateDB / 20) else { return nil }
+        return hz(AudioData(mono: frame, sampleRate: sampleRate), threshold: 0.15)
+    }
+
+    /// Mic mode (SYNTH_SPEC §4): keep `seconds` from the first sound above `thresholdDB`
+    /// (plus 10 ms before it), mono, with short fades. nil when nothing was loud enough.
+    public static func micTake(_ audio: AudioData, keep seconds: Double = 1, thresholdDB: Float = -40) -> AudioData? {
+        let x = audio.mono
+        let gate = pow(10, thresholdDB / 20)
+        guard let onset = x.firstIndex(where: { abs($0) > gate }) else { return nil }
+        let start = max(0, onset - Int(0.01 * audio.sampleRate))
+        let end = min(x.count, start + Int(seconds * audio.sampleRate))
+        guard end - start > Int(0.05 * audio.sampleRate) else { return nil }
+        var y = Array(x[start..<end])
+        let fadeIn = min(y.count, Int(0.002 * audio.sampleRate)), fadeOut = min(y.count, Int(0.02 * audio.sampleRate))
+        for i in 0..<fadeIn { y[i] *= Float(i) / Float(fadeIn) }
+        for i in 0..<fadeOut { y[y.count - 1 - i] *= Float(i) / Float(fadeOut) }
+        return AudioData(mono: y, sampleRate: audio.sampleRate)
+    }
+
+    /// Fractional MIDI pitch, e.g. 57.2 for a slightly sharp A3.
+    public static func midiPitch(_ hz: Double) -> Double { 69 + 12 * log2(hz / 440) }
+}
