@@ -1,2 +1,2 @@
-1. smart sample slicing (by where user wants)
+1. smart sample slicing (by where user wants) — done: the Smart chop method
     ability to modulate sample pitch

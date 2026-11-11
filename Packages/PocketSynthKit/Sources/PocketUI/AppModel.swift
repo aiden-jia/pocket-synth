@@ -36,6 +36,10 @@ public final class AppModel {
     @ObservationIgnored private var saveTask: Task<Void, Never>?
     @ObservationIgnored private var sessionSaveTask: Task<Void, Never>?
     @ObservationIgnored private var detectTask: Task<Void, Never>?
+    @ObservationIgnored private var snapTask: Task<Void, Never>?
+    /// The chopped sample's audio, copied once for the smart-slice detector (it runs on
+    /// every move of the search window).
+    @ObservationIgnored private var chopAudio: (id: SampleID, audio: AudioData)?
 
     // Mic input users: the Sample view (source = mic), Tuner, Mic mode, the MIC vocoder.
     @ObservationIgnored private let inputMonitor = InputMonitor()
@@ -69,6 +73,8 @@ public final class AppModel {
 
     // Sample Edit
     public private(set) var chop: ChopSession?
+    /// Smart chop: the detector is looking at a new search window.
+    public private(set) var snapSearching = false
     public private(set) var busy: String?
 
     var sessionURL: URL { store.directory.appendingPathComponent("synth.json") }
@@ -654,6 +660,9 @@ public final class AppModel {
             return
         }
         if chop?.sample == id { return }
+        chopAudio = nil
+        snapTask?.cancel()
+        snapSearching = false
         var c = ChopSession(sample: id, frames: info.frames, sampleRate: info.sampleRate)
         c.bpm = bpm
         chop = c
@@ -669,6 +678,7 @@ public final class AppModel {
             || c.regionCount != before.regionCount || c.bpm != before.bpm || c.division != before.division {
             rechop()
         }
+        if c.searchRange != before.searchRange { resnap() }
     }
 
     /// Recomputes markers for the current method (threshold detection runs off the main thread).
@@ -676,8 +686,8 @@ public final class AppModel {
         guard let c = chop else { return }
         detectTask?.cancel()
         switch c.method {
-        case .manual:
-            break
+        case .manual, .smart:
+            break // markers are the user's own edits
         case .regions:
             chop?.setMarkers(Slicing.regions(frames: c.frames, count: c.regionCount))
         case .beats:
@@ -693,6 +703,38 @@ public final class AppModel {
                 self.chop?.setMarkers(markers)
             }
         }
+    }
+
+    /// Smart chop: finds where the sound starts in the search window (off the main thread,
+    /// lightly debounced since the window moves with the finger).
+    private func resnap() {
+        snapTask?.cancel()
+        guard let c = chop, let range = c.searchRange else { snapSearching = false; return }
+        let id = c.sample
+        snapSearching = true
+        snapTask = Task {
+            try? await Task.sleep(for: .milliseconds(40))
+            guard !Task.isCancelled else { return }
+            if chopAudio?.id != id { chopAudio = audioData(id).map { (id, $0) } }
+            guard let audio = chopAudio?.audio else { snapSearching = false; return }
+            let found = await Task.detached { Analysis.snapOnset(audio, in: range) }.value
+            guard !Task.isCancelled, chop?.sample == id, chop?.searchRange == range else { return }
+            chop?.snapFrame = found
+            snapSearching = false
+        }
+    }
+
+    /// Smart chop: adds a slice where the detector snapped, and plays it.
+    public func addSmartSlice() {
+        guard var c = chop, let i = c.addSnappedMarker() else { return }
+        chop = c
+        previewSlice(i)
+    }
+
+    /// Smart chop: plays from the snap point to the next slice, to check it before adding.
+    public func previewSnap() {
+        guard let c = chop, let f = c.snapFrame else { return }
+        bridge.preview(c.sample, range: f..<(c.markers.first { $0 > f } ?? c.frames))
     }
 
     public func detectChopBPM() {

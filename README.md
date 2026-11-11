@@ -26,7 +26,7 @@ Phases 0–5 (see DESIGN §10) are done. Phase 6 is done for v1 (synth tools, vo
 | Synth looper: 6 tracks up to 2 min, bar or free first take with count-in, auto-advance, hold-to-clear, tape-stop pause, Mixer mode (mute/solo/level, metronome), send a loop to the sampler | done, tested, checked in the simulator |
 | Synth session (sound, settings, presets) restored on relaunch; randomize and preset save wait while a loop records | done, tested |
 | Sampling: resample master / synth / sampler, or the mic; threshold arm, pre-roll, meter, trim silence, auto-assign | done, tested; resampling checked in the simulator (mic not yet) |
-| Chop: hits (transient detection), regions, BPM grid (with tempo detection), manual markers; convert to pads, new samples, or pads + sequence | done, tested, checked in the simulator |
+| Chop: hits (transient detection), regions, BPM grid (with tempo detection), smart (drag a window over the rough spot and the slice snaps to where the sound starts), manual markers; convert to pads, new samples, or pads + sequence | done, tested, checked in the simulator |
 | Processes: normalize, gain, fades, crop/delete/silence, reverse, trim silence, pitch shift, time stretch, bit crush, mono, remove DC — each an undoable new version | done, tested |
 | Phase 6 sampler: track arpeggiator, retrospective record, audio tracks, clip program, auto-sampler | built, unit- and render-tested; Retro and the Clips editor checked in the simulator |
 | Phase 6 synth: Tuner, Mic mode (pitched sample in Lead), ear Trainer (6 levels), rhythm Game (10 songs, 5 tiers, practice speed), 12-band vocoder (MIC / LOOP) | built, unit- and render-tested; Game and Trainer checked in the simulator; Tuner, Mic and vocoder not yet checked with a real mic |

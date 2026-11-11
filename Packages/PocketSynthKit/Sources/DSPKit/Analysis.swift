@@ -89,11 +89,7 @@ public enum Analysis {
         for i in from..<to { peak = max(peak, abs(x[i])) }
         var i = from
         while i < to, abs(x[i]) < 0.3 * peak { i += 1 }
-        // Back up to the zero crossing just before it (at most 2 ms; stop at true zeros).
-        var j = min(i, x.count - 1)
-        let limit = max(0, j - 96)
-        while j > limit, x[j - 1] != 0, (x[j - 1] > 0) == (x[j] > 0) { j -= 1 }
-        return j
+        return backToZeroCrossing(x, i)
     }
 
     /// Tempo from the onset envelope's autocorrelation, constrained to 60…200 BPM. If the
@@ -159,5 +155,131 @@ public enum Slicing {
             t += step
         }
         return out
+    }
+}
+
+// MARK: - Smart slice
+
+public extension Analysis {
+    /// Smart slice (SAMPLER_SPEC §5.2): where the one new sound in `range` starts (a vocal
+    /// coming in, a hit, a new note), on its first audible sample. Nil when nothing in the
+    /// range stands out from what came before it.
+    ///
+    /// Each boundary in the range is scored on two steps measured over ~30 ms on each side:
+    /// how much louder it gets (dB, so the score doesn't depend on the sample's level), and
+    /// how much of the spectrum is new (catches a note change at the same level). The best
+    /// boundary is then moved back to where the sound first leaves the quiet before it, so
+    /// slow attacks (a voice fading in) get their real start, not their middle.
+    ///
+    /// The result can be up to ~50 ms before `range` when the sound started just before it.
+    static func snapOnset(_ audio: AudioData, in range: Range<Int>) -> Int? {
+        let x = audio.mono
+        let r = audio.clamp(range)
+        guard r.count >= 256 else { return nil }
+        let peak = vDSP.maximumMagnitude(x)
+        guard peak > 0 else { return nil }
+        // Anything 60 dB under the loudest moment counts as silence: its wobbles aren't steps.
+        let floorDB = 20 * log10(peak) - 60
+
+        let block = 128, n = 1024
+        let m = max(4, Int(0.03 * audio.sampleRate) / block) // blocks per side of a boundary
+        let base = max(0, r.lowerBound - (m + 1) * block)
+        let blocks = (min(x.count, r.upperBound + (m + 1) * block) - base) / block
+        guard blocks > 2 * m else { return nil }
+
+        let db: [Float] = x.withUnsafeBufferPointer { p in
+            (0..<blocks).map { k in
+                let s = UnsafeBufferPointer(rebasing: p[(base + k * block)..<(base + (k + 1) * block)])
+                return max(floorDB, 10 * log10(vDSP.meanSquare(s) + 1e-20))
+            }
+        }
+
+        let spectrum = MagnitudeSpectrum(size: n)
+        var best = -1, bestScore: Float = 0
+        for k in m...(blocks - m) {
+            let b = base + k * block
+            guard r.contains(b) else { continue }
+            let before = db[(k - m)..<k].reduce(0, +) / Float(m)
+            let after = db[k..<(k + m)].reduce(0, +) / Float(m)
+            guard after > floorDB + 6 else { continue } // nothing audible starts here
+            let novelty = b - n >= 0 && b + n <= x.count
+                ? spectrum.newFraction(x, before: (b - n)..<b, after: b..<(b + n)) : 0
+            let score = max(0, after - before) / 6 + max(0, novelty - 0.3) * 4
+            if score > bestScore { bestScore = score; best = k }
+        }
+        guard best >= 0, bestScore >= 1 else { return nil }
+        let k = best
+        let boundary = base + k * block
+        var onset = boundary
+        // Peak-hold envelope (≈10 ms release) from 60 ms before the boundary: unlike a short
+        // RMS it doesn't dip at every zero crossing of a low voice, and it rises on the
+        // first sample. The quiet level comes from 30…60 ms before, since a slow attack
+        // has usually begun in the 30 ms just before the boundary.
+        let lo = max(0, boundary - 2 * m * block), hi = min(x.count, boundary + m * block)
+        let release = Float(exp(log(0.5) / (0.01 * audio.sampleRate)))
+        var env = [Float](repeating: 0, count: hi - lo)
+        var e: Float = 0
+        for i in env.indices { e = max(abs(x[lo + i]), e * release); env[i] = e }
+        let toDB: (Float) -> Float = { max(floorDB, 20 * log10($0 + 1e-20)) }
+        let split = boundary - lo
+        let warm = min(split / 4, Int(0.005 * audio.sampleRate))
+        let quietEnd = max(warm + 1, split - m * block)
+        let before = env[warm..<quietEnd].sorted()
+        let quiet = toDB(before[Int(Double(before.count - 1) * 0.9)]) // the bed's usual peaks
+        let loudest = env[split...].indices.max { env[$0] < env[$1] }!
+        let loud = toDB(env[loudest])
+        if loud - quiet >= 6 {
+            // Walk back from the loudest point to the last moment still near the quiet
+            // level (a low bar: better a hair early than clipping the attack)
+            // — the sound starts on the next sample.
+            let threshold = Float.gain(dB: quiet + max(3, 0.15 * (loud - quiet)))
+            var i = loudest
+            while i > warm, env[i - 1] >= threshold { i -= 1 }
+            onset = lo + i
+        }
+        return backToZeroCrossing(x, onset)
+    }
+
+    /// Steps back (at most 2 ms) to the zero crossing just before `i`, so a cut there
+    /// doesn't click.
+    internal static func backToZeroCrossing(_ x: [Float], _ i: Int) -> Int {
+        guard !x.isEmpty else { return 0 }
+        var j = max(0, min(i, x.count - 1))
+        let limit = max(0, j - 96)
+        while j > limit, x[j - 1] != 0, (x[j - 1] > 0) == (x[j] > 0) { j -= 1 }
+        return j
+    }
+}
+
+/// Hann-windowed magnitude spectra for comparing two stretches of audio.
+private final class MagnitudeSpectrum {
+    let n: Int
+    private let setup: vDSP_DFT_Setup
+    private let window: [Float]
+    private let zeros: [Float]
+    private var frame: [Float], re: [Float], im: [Float]
+
+    init(size: Int) {
+        n = size
+        setup = vDSP_DFT_zop_CreateSetup(nil, vDSP_Length(size), .FORWARD)!
+        window = vDSP.window(ofType: Float.self, usingSequence: .hanningDenormalized, count: size, isHalfWindow: false)
+        zeros = [Float](repeating: 0, count: size)
+        frame = zeros; re = zeros; im = zeros
+    }
+
+    deinit { vDSP_DFT_DestroySetup(setup) }
+
+    func magnitudes(_ x: [Float], _ r: Range<Int>) -> [Float] {
+        x.withUnsafeBufferPointer { p in vDSP.multiply(UnsafeBufferPointer(rebasing: p[r]), window, result: &frame) }
+        vDSP_DFT_Execute(setup, frame, zeros, &re, &im)
+        return (0..<(n / 2)).map { (re[$0] * re[$0] + im[$0] * im[$0]).squareRoot() }
+    }
+
+    /// The share of `after`'s spectrum that wasn't in `before` (0 = same sound, 1 = all new).
+    func newFraction(_ x: [Float], before: Range<Int>, after: Range<Int>) -> Float {
+        let a = magnitudes(x, after), b = magnitudes(x, before)
+        var new: Float = 0, total: Float = 0
+        for i in a.indices { new += max(0, a[i] - b[i]); total += a[i] }
+        return total > 0 ? new / total : 0
     }
 }

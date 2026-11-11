@@ -160,6 +160,7 @@ Unchanged from rev 1, except that the menus are now real touch lists *and* the c
   - destructive sample processes, where revert swaps back to the previous file version.
 - **TimingCorrect:** pure functions (events, settings) → events. Used live (TC on input), on selections, and by the Note Repeat preview.
 - **Chop:** a `ChopSession` holds markers and method settings. Detection runs in DSPKit on a background task.
+  - **Smart** keeps the user's search window (`searchRange`) and the detector's answer (`snapFrame`) in the session. `AppModel` reruns `Analysis.snapOnset` (debounced 40 ms) whenever the window moves, on a copy of the sample's audio made once per chop.
   - **Convert** produces commands: new Drum program, new samples, patched-phrase keygroup, or a generated slice-replay sequence.
 - **Compiler:** model → engine snapshots.
   - A `SequenceSnapshot` is a sorted, flattened event array in ticks (960 PPQN) with resolved program targets.
@@ -207,9 +208,10 @@ Unchanged from rev 1, except that the menus are now real touch lists *and* the c
 
 | Job | Approach |
 |---|---|
-| Time-stretch & pitch-shift | **Signalsmith Stretch** (MIT). It covers both offline processes and the real-time warp in the engine |
+| Time-stretch & pitch-shift | Our own **WSOLA** stretch; pitch shift = stretch + resample. Signalsmith Stretch (MIT) stays an option for dense mixes and the real-time warp |
 | Onset detection (Chop threshold) | Spectral-flux onset detector with an adaptive threshold; sensitivity maps to the threshold |
-| BPM detection | Onset autocorrelation + tempo histogram, constrained to 60–200 |
+| Smart slice snap (Chop smart) | In the user's window, score each 128-frame boundary by its loudness step (dB, ~30 ms each side) plus the new share of its spectrum; take the best, then walk a peak-hold envelope back to where the sound leaves the quiet before it (measured 30–60 ms earlier), and back up to a zero crossing. Nothing above the threshold = no snap |
+| BPM detection | Onset-envelope autocorrelation, constrained to 60–200, snapped to the loop length when it's close to whole bars |
 | Pitch detection | YIN, for auto-map, mic sample, tuner |
 | Processes | Normalize, fades, reverse, gain, DC removal, crop/insert/silence, bit-crush and resample, mono/stereo |
 | Sample-rate conversion | Imported files are converted to 48 kHz float on import (high-quality polyphase) |
@@ -262,6 +264,7 @@ Unchanged from rev 1, except that the menus are now real touch lists *and* the c
 **DSPKit**
 
 - Onset detection vs. labeled drum loops (precision/recall).
+- Smart slice snap on synthetic audio with known starts: a voice after silence or over noise, a slow fade-in, a hit inside a held note, a same-level note change, two hits in one window, and windows with nothing in them.
 - BPM detection on a reference set.
 - Stretch length and pitch accuracy.
 
@@ -331,6 +334,8 @@ Unchanged from rev 1, except that the menus are now real touch lists *and* the c
   - Destructive processes create a new sample file and point the pads at it. The old one stays in the pool (archived, hidden) so undo works; "Discard unused audio" deletes archived versions nothing uses.
   - Chop converts onto the first empty bank, so existing pads aren't overwritten. "Pads + sequence" is one undo step.
   - Not done in phase 4: the looper's per-track MIDI events (phase 5, with MIDI), keygroup "patched phrase" conversion (phase 5, with keygroups), Seq-mode auto-bounce to the looper, and per-pad warp.
+- **After v1:**
+  - **Smart chop** (a fifth Chop method): the user drags a window over the rough spot and the slice snaps to where the sound starts (see §5.3 and §7). Unit-tested, and checked in the simulator on a test file with known starts (it found 2.300 s exactly, and 4.603 s for a voice starting at 4.600 s over noise).
 
 ## 11. IP notes
 

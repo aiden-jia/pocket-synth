@@ -186,3 +186,97 @@ struct PitchTests {
         #expect(PitchDetect.hz(AudioData(mono: x, sampleRate: sr)) == nil)
     }
 }
+
+@Suite("Smart slice")
+struct SmartSliceTests {
+    func frames(_ t: Double) -> Int { Int(t * sr) }
+    func secs(_ f: Int?) -> String { f.map { String(format: "%.4f s", Double($0) / sr) } ?? "nil" }
+
+    /// A sung "ah": harmonics with vibrato, fading in over `attack` seconds.
+    func voice(into x: inout [Float], at start: Double, seconds: Double, hz: Double = 220,
+               attack: Double = 0.04, amp: Double = 0.3) {
+        let s0 = frames(start)
+        for i in 0..<frames(seconds) where s0 + i < x.count {
+            let t = Double(i) / sr
+            let env = min(1, t / attack) * min(1, (seconds - t) / 0.05)
+            let f = hz * (1 + 0.01 * sin(2 * .pi * 5 * t))
+            var v = 0.0
+            for h in 1...6 { v += sin(2 * .pi * f * Double(h) * t) / Double(h) }
+            x[s0 + i] += Float(amp * env * v)
+        }
+    }
+
+    func noise(_ count: Int, amp: Float, seed: UInt32 = 99) -> [Float] {
+        var s = seed
+        return (0..<count).map { _ in
+            s = s &* 1_664_525 &+ 1_013_904_223
+            return amp * Float(Int32(bitPattern: s)) / Float(Int32.max)
+        }
+    }
+
+    @Test func findsTheStartOfAVoiceAfterSilence() {
+        var x = [Float](repeating: 0, count: frames(2))
+        voice(into: &x, at: 0.731, seconds: 1)
+        let a = AudioData(mono: x, sampleRate: sr)
+        // Rough range: the user's window only has to cover the entry, not land on it.
+        for range in [frames(0.6)..<frames(0.9), frames(0.72)..<frames(1.1), frames(0.5)..<frames(0.76)] {
+            let f = Analysis.snapOnset(a, in: range)
+            #expect(f.map { abs($0 - frames(0.731)) < frames(0.004) } == true, "\(secs(f)) for \(range)")
+        }
+    }
+
+    @Test func slowFadeInSnapsToItsBeginningNotItsMiddle() {
+        var x = [Float](repeating: 0, count: frames(2))
+        voice(into: &x, at: 0.5, seconds: 1, attack: 0.25)
+        let f = Analysis.snapOnset(AudioData(mono: x, sampleRate: sr), in: frames(0.3)..<frames(0.9))
+        #expect(f.map { abs($0 - frames(0.5)) < frames(0.02) } == true, "\(secs(f))")
+    }
+
+    @Test func findsAVoiceComingInOverABed() {
+        var x = noise(frames(2), amp: 0.02)                // a quiet room / backing hiss
+        voice(into: &x, at: 1.2, seconds: 0.7)
+        let f = Analysis.snapOnset(AudioData(mono: x, sampleRate: sr), in: frames(1.0)..<frames(1.4))
+        #expect(f.map { abs($0 - frames(1.2)) < frames(0.006) } == true, "\(secs(f))")
+    }
+
+    @Test func findsAHitInsideLoudMusic() {
+        var x = [Float](repeating: 0, count: frames(2))
+        voice(into: &x, at: 0, seconds: 2, attack: 0.01, amp: 0.15)
+        let h = hits(at: [1.05], seconds: 2).channels[0]
+        for i in x.indices { x[i] += h[i] }
+        let f = Analysis.snapOnset(AudioData(mono: x, sampleRate: sr), in: frames(0.9)..<frames(1.2))
+        #expect(f.map { abs($0 - frames(1.05)) < frames(0.003) } == true, "\(secs(f))")
+    }
+
+    @Test func findsANoteChangeAtTheSameLevel() {
+        var x = [Float](repeating: 0, count: frames(2))
+        voice(into: &x, at: 0, seconds: 1.0, hz: 220, attack: 0.01)
+        voice(into: &x, at: 1.0, seconds: 1.0, hz: 330, attack: 0.01)
+        let f = Analysis.snapOnset(AudioData(mono: x, sampleRate: sr), in: frames(0.85)..<frames(1.15))
+        #expect(f.map { abs($0 - frames(1.0)) < frames(0.02) } == true, "\(secs(f))")
+    }
+
+    @Test func picksTheStrongestStartInTheRange() {
+        let a = hits(at: [0.4, 0.55], seconds: 1, amps: [0.03, 0.8])
+        let f = Analysis.snapOnset(a, in: frames(0.3)..<frames(0.7))
+        #expect(f.map { abs($0 - frames(0.55)) < frames(0.003) } == true, "\(secs(f))")
+    }
+
+    @Test func nothingStartingMeansNoSnap() {
+        let steady = sine(330, seconds: 2, amp: 0.4)
+        #expect(Analysis.snapOnset(steady, in: frames(0.5)..<frames(1.5)) == nil)
+        let silent = AudioData(mono: [Float](repeating: 0, count: frames(1)), sampleRate: sr)
+        #expect(Analysis.snapOnset(silent, in: 0..<frames(1)) == nil)
+        var x = [Float](repeating: 0, count: frames(2))
+        voice(into: &x, at: 0.2, seconds: 1.8)
+        // Range in the middle of a held note: nothing new.
+        #expect(Analysis.snapOnset(AudioData(mono: x, sampleRate: sr), in: frames(1.0)..<frames(1.3)) == nil)
+    }
+
+    @Test func landsOnAZeroCrossing() throws {
+        var x = [Float](repeating: 0, count: frames(1))
+        voice(into: &x, at: 0.3, seconds: 0.6, attack: 0.002)
+        let f = try #require(Analysis.snapOnset(AudioData(mono: x, sampleRate: sr), in: frames(0.2)..<frames(0.5)))
+        #expect(f == 0 || x[f - 1] == 0 || (x[f - 1] > 0) != (x[f] > 0))
+    }
+}

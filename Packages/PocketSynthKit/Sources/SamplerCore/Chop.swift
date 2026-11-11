@@ -1,14 +1,15 @@
 /// Chop mode (SAMPLER_SPEC §5.2): slice markers on one sample, plus the settings of the
-/// four methods. Detection itself runs in DSPKit; this holds the result and the edits.
+/// five methods. Detection itself runs in DSPKit; this holds the result and the edits.
 
 public enum ChopMethod: String, CaseIterable, Sendable {
-    case threshold, regions, beats, manual
+    case threshold, regions, beats, smart, manual
 
     public var label: String {
         switch self {
         case .threshold: "Hits"
         case .regions: "Regions"
         case .beats: "BPM"
+        case .smart: "Smart"
         case .manual: "Manual"
         }
     }
@@ -37,6 +38,10 @@ public struct ChopSession: Equatable, Sendable {
     /// Slice starts in frames, sorted; the first is always 0.
     public private(set) var markers: [Int] = [0]
     public var selected: Int?
+    /// Smart method: the rough window the user dragged over where a slice should start…
+    public private(set) var searchRange: Range<Int>?
+    /// …and where the detector found the sound starting in it (nil: nothing, or not yet).
+    public var snapFrame: Int?
 
     public init(sample: SampleID, frames: Int, sampleRate: Double) {
         self.sample = sample
@@ -92,4 +97,54 @@ public struct ChopSession: Equatable, Sendable {
 
     /// Merges slice `i` with the next one.
     public mutating func mergeWithNext(_ i: Int) { removeMarker(i + 1) }
+
+    // MARK: Smart
+
+    /// The narrowest search window (20 ms): anything shorter is just a manual marker.
+    public var minSearchFrames: Int { min(frames, max(256, Int(0.02 * sampleRate))) }
+
+    /// A new window starts at 300 ms (or a tenth of a short sample).
+    public var defaultSearchFrames: Int { max(minSearchFrames, min(Int(0.3 * sampleRate), frames / 10)) }
+
+    /// Sets the search window, kept inside the sample and at least `minSearchFrames` wide.
+    /// A new window clears the old snap until the detector reports again.
+    public mutating func setSearchRange(_ lower: Int, _ upper: Int) {
+        let w = minSearchFrames
+        var lo = max(0, min(lower, frames - w))
+        var hi = max(lo + w, min(upper, frames))
+        if hi > frames { hi = frames; lo = hi - w }
+        let r = lo..<hi
+        guard r != searchRange else { return }
+        searchRange = r
+        snapFrame = nil
+    }
+
+    /// A window of the same width (or the default) centred on `frame`, pushed inside the
+    /// sample near its ends rather than narrowed.
+    public mutating func centerSearch(at frame: Int) {
+        let w = min(frames, searchRange?.count ?? defaultSearchFrames)
+        let lo = max(0, min(frame - w / 2, frames - w))
+        setSearchRange(lo, lo + w)
+    }
+
+    /// Slides the window so it starts at `lower`, keeping its width.
+    public mutating func moveSearch(to lower: Int) {
+        guard let r = searchRange else { return }
+        let lo = max(0, min(lower, frames - r.count))
+        setSearchRange(lo, lo + r.count)
+    }
+
+    public mutating func clearSearch() {
+        searchRange = nil
+        snapFrame = nil
+    }
+
+    /// Adds a slice at the snap point. Returns its index, or nil when there's no snap or a
+    /// slice already starts there.
+    @discardableResult
+    public mutating func addSnappedMarker() -> Int? {
+        guard let f = snapFrame, f > 0, f < frames - 1, !markers.contains(f), markers.count < Self.maxSlices else { return nil }
+        addMarker(at: f)
+        return selected
+    }
 }

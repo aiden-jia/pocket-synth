@@ -113,10 +113,11 @@ Sends the track to an external MIDI port and channel, with program change on loa
 
 | Method | Detail |
 |---|---|
-| **Threshold** | Transient detection by spectral flux. A sensitivity slider gives a live slice count. A minimum slice length prevents double hits |
+| **Threshold** ("Hits" in the app) | Transient detection by spectral flux. A sensitivity slider gives a live slice count. A minimum slice length prevents double hits |
 | **Regions** | Divides the sample into N equal slices (2–128) |
 | **BPM / Beat grid** | Uses the detected or entered BPM. Slices every 1/4, 1/8 or 1/16 beat, or per bar |
-| **Manual** | Tap "Slice" while it plays, or tap the waveform. Drag markers; split or merge; delete |
+| **Smart** | Tap near where a sound starts. A search window appears there: 300 ms (a tenth of the sample if that is shorter, at least 20 ms), with a handle just outside each edge. Drag inside the window to move it, drag a handle to resize it, or tap elsewhere to move it there at the same width. As it moves, the detector marks where the strongest new sound in it starts (a vocal coming in, a hit, a note change) with a dashed line and the time. The mark sits on the first audible sample, backed up to a zero crossing, and can be up to ~50 ms before the window when the sound began just before it. *Add slice* places a marker there and plays the slice; it greys out when a slice already starts there. Tap inside the window to hear from the mark first. "Nothing starts here" means the window holds no clear start. Existing markers stay, and you can drag them as in Manual |
+| **Manual** | Tap the waveform to add a slice. Drag markers to move them; split or merge the selected slice; delete |
 
 - Slices map to pads automatically: slice 1 is on pad A01.
 - Pads play their slice live while you edit.

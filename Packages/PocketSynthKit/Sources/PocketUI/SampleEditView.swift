@@ -94,7 +94,15 @@ struct ProcessMenu: View {
 struct ChopView: View {
     let model: AppModel
     @Bindable var sampler: SamplerController
-    @State private var dragMarker: Int?
+
+    /// What the finger on the waveform is moving.
+    private enum Drag: Equatable {
+        case marker(Int)
+        case searchLower, searchUpper       // a smart window's handles
+        case searchWindow(offset: Int)      // the whole window, held `offset` frames in
+    }
+    @State private var drag: Drag?
+    @State private var dragMoved = false
 
     var body: some View {
         Group {
@@ -156,12 +164,34 @@ struct ChopView: View {
                 }
                 .pickerStyle(.menu)
                 .font(.caption)
+            case .smart:
+                Text(smartHint(c)).font(.caption).foregroundStyle(Theme.dim)
+                    .lineLimit(2, reservesSpace: true) // the waveform stays put as the hint changes
+                Spacer(minLength: 0)
+                let found = c.snapFrame != nil
+                let addable = found && !c.markers.contains(c.snapFrame!)
+                ToolButton(icon: "play.fill") { model.previewSnap() }
+                    .disabled(!found).opacity(found ? 1 : 0.4)
+                Button { model.addSmartSlice() } label: {
+                    ToolLabel(text: "ADD SLICE", icon: "scissors", on: addable)
+                }
+                .buttonStyle(.plain)
+                .disabled(!addable).opacity(addable ? 1 : 0.4)
             case .manual:
                 Text("Tap the waveform to add a slice; drag a marker to move it.")
                     .font(.caption).foregroundStyle(Theme.dim).lineLimit(2)
                 Spacer(minLength: 0)
             }
         }
+    }
+
+    private func smartHint(_ c: ChopSession) -> String {
+        if c.searchRange == nil { return "Tap near where a sound starts, then drag to adjust." }
+        if model.snapSearching { return "Finding the start…" }
+        guard let f = c.snapFrame else { return "Nothing starts here. Move or widen the window." }
+        let at = String(format: "Starts at %.3f s.", Double(f) / c.sampleRate)
+        if let i = c.markers.firstIndex(of: f) { return "\(at) Slice \(i + 1) is there." }
+        return at
     }
 
     private func markerButtons(_ c: ChopSession) -> some View {
@@ -195,14 +225,42 @@ struct ChopView: View {
                                      at: CGPoint(x: x0 + 3, y: 8), anchor: .leading)
                         }
                     }
+                    if c.method == .smart, let r = c.searchRange {
+                        drawSearch(ctx, size, from: x(r.lowerBound), to: x(r.upperBound), snap: c.snapFrame.map(x))
+                    }
                 }
                 #if canImport(UIKit)
-                SingleTouchSurface(began: { began($0, c, w) }, moved: { moved($0, c, w) }, ended: { _ in dragMarker = nil })
+                SingleTouchSurface(began: { began($0, c, w) }, moved: { moved($0, c, w) }, ended: { _ in ended() })
                 #endif
             }
         }
         .background(RoundedRectangle(cornerRadius: 10).fill(Theme.screen))
         .clipShape(RoundedRectangle(cornerRadius: 10))
+    }
+
+    /// Touch zone of a smart window handle, outside its edge so even a narrow window keeps
+    /// its middle free for dragging the whole window.
+    private static let handleReach: CGFloat = 22
+
+    /// The smart search window: a shaded span with a handle just outside each edge, and a
+    /// dashed line with a flag where the detector found the start.
+    private func drawSearch(_ ctx: GraphicsContext, _ size: CGSize, from x0: CGFloat, to x1: CGFloat, snap: CGFloat?) {
+        ctx.fill(Path(CGRect(x: x0, y: 0, width: x1 - x0, height: size.height)), with: .color(Theme.text.opacity(0.14)))
+        for (edge, out) in [(x0, CGFloat(-1)), (x1, CGFloat(1))] {
+            ctx.fill(Path(CGRect(x: edge - 1, y: 0, width: 2, height: size.height)), with: .color(Theme.text.opacity(0.6)))
+            let knob = CGRect(x: out < 0 ? edge - 10 : edge + 2, y: size.height / 2 - 14, width: 8, height: 28)
+            ctx.fill(Path(roundedRect: knob, cornerRadius: 4), with: .color(Theme.text))
+        }
+        guard let sx = snap else { return }
+        let line = Path { $0.move(to: CGPoint(x: sx, y: 0)); $0.addLine(to: CGPoint(x: sx, y: size.height)) }
+        ctx.stroke(line, with: .color(Theme.warm), style: StrokeStyle(lineWidth: 1.5, dash: [4, 3]))
+        let flag = Path { p in
+            p.move(to: CGPoint(x: sx - 5, y: 0))
+            p.addLine(to: CGPoint(x: sx + 5, y: 0))
+            p.addLine(to: CGPoint(x: sx, y: 8))
+            p.closeSubpath()
+        }
+        ctx.fill(flag, with: .color(Theme.warm))
     }
 
     private func frame(_ p: CGPoint, _ c: ChopSession, _ w: CGFloat) -> Int {
@@ -211,26 +269,67 @@ struct ChopView: View {
 
     private func began(_ p: CGPoint, _ c: ChopSession, _ w: CGFloat) {
         let f = frame(p, c, w)
-        // Near a marker: select it (and drag it in manual mode).
-        let tol = Int(10 / w * CGFloat(c.frames))
+        let perPoint = CGFloat(c.frames) / w
+        dragMoved = false
+        // Smart window first: a handle just outside each edge (and the inner 10 pt of a
+        // wide window), the whole window from anywhere else inside it.
+        if c.method == .smart, let r = c.searchRange {
+            let lx = CGFloat(r.lowerBound) / perPoint, ux = CGFloat(r.upperBound) / perPoint
+            let inner: CGFloat = ux - lx > 48 ? 10 : 0
+            if p.x >= lx - Self.handleReach, p.x < lx + inner { drag = .searchLower; return }
+            if p.x > ux - inner, p.x <= ux + Self.handleReach { drag = .searchUpper; return }
+            if p.x >= lx, p.x <= ux { drag = .searchWindow(offset: f - r.lowerBound); return }
+        }
+        // Near a marker: select it (and drag it).
+        let tol = Int(10 * perPoint)
         if let i = c.markers.indices.dropFirst().min(by: { abs(c.markers[$0] - f) < abs(c.markers[$1] - f) }),
            abs(c.markers[i] - f) <= tol {
             model.updateChop { $0.selected = i }
-            dragMarker = i
+            drag = .marker(i)
             return
         }
-        if c.method == .manual {
+        switch c.method {
+        case .manual:
             model.updateChop { $0.addMarker(at: f) }
             model.previewSlice(atFrame: f)
-        } else {
+        case .smart:
+            // Outside the window: it jumps here (same width) and follows the finger.
+            model.updateChop { $0.centerSearch(at: f) }
+            dragMoved = true // a fresh window isn't a tap to audition
+            drag = .searchWindow(offset: (model.chop?.searchRange).map { f - $0.lowerBound } ?? 0)
+        default:
             model.previewSlice(atFrame: f)
         }
     }
 
     private func moved(_ p: CGPoint, _ c: ChopSession, _ w: CGFloat) {
-        guard let i = dragMarker else { return }
-        if c.method != .manual { model.updateChop { $0.method = .manual } } // editing makes it manual
-        model.updateChop { $0.moveMarker(i, to: frame(p, c, w)) }
+        guard let d = drag else { return }
+        dragMoved = true
+        let f = frame(p, c, w)
+        switch d {
+        case .marker(let i):
+            // Editing makes a detected chop manual; a smart chop is already hand-made.
+            if c.method != .manual && c.method != .smart { model.updateChop { $0.method = .manual } }
+            model.updateChop { $0.moveMarker(i, to: f) }
+        case .searchLower:
+            model.updateChop { s in
+                guard let r = s.searchRange else { return }
+                s.setSearchRange(min(f, r.upperBound - s.minSearchFrames), r.upperBound)
+            }
+        case .searchUpper:
+            model.updateChop { s in
+                guard let r = s.searchRange else { return }
+                s.setSearchRange(r.lowerBound, max(f, r.lowerBound + s.minSearchFrames))
+            }
+        case .searchWindow(let offset):
+            model.updateChop { $0.moveSearch(to: f - offset) }
+        }
+    }
+
+    private func ended() {
+        // A tap (no drag) inside the window auditions the snap.
+        if case .searchWindow = drag, !dragMoved { model.previewSnap() }
+        drag = nil
     }
 }
 

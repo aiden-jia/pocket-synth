@@ -106,3 +106,56 @@ struct ChopConversionTests {
         #expect(!i.archived)
     }
 }
+
+@Suite("Smart chop")
+struct SmartChopTests {
+    func session(frames: Int = 480_000) -> ChopSession { ChopSession(sample: SampleID("s"), frames: frames, sampleRate: 48_000) }
+
+    @Test func searchWindowStaysInsideAndWideEnough() {
+        var c = session()
+        c.centerSearch(at: 100_000)
+        #expect(c.searchRange == 92_800..<107_200)          // 300 ms default
+        c.centerSearch(at: 1_000)                           // same width, pushed inside
+        #expect(c.searchRange == 0..<14_400)
+        c.setSearchRange(470_000, 900_000)
+        #expect(c.searchRange == 470_000..<480_000)
+        c.setSearchRange(5_000, 5_010)                      // too narrow: 20 ms minimum
+        #expect(c.searchRange == 5_000..<5_960)
+        c.setSearchRange(479_900, 479_950)                  // too narrow at the very end
+        #expect(c.searchRange == 479_040..<480_000)
+        c.moveSearch(to: 1_000_000)
+        #expect(c.searchRange == 479_040..<480_000)
+        c.moveSearch(to: -10)
+        #expect(c.searchRange == 0..<960)
+    }
+
+    @Test func shortSampleGetsAShortWindow() {
+        var c = session(frames: 24_000)                     // 0.5 s
+        c.centerSearch(at: 12_000)
+        #expect(c.searchRange?.count == 2_400)
+    }
+
+    @Test func movingTheWindowDropsTheOldSnap() {
+        var c = session()
+        c.centerSearch(at: 100_000)
+        c.snapFrame = 99_000
+        c.setSearchRange(92_800, 107_200)                   // unchanged: snap kept
+        #expect(c.snapFrame == 99_000)
+        c.moveSearch(to: 200_000)
+        #expect(c.snapFrame == nil)
+    }
+
+    @Test func addsASliceAtTheSnapOnce() {
+        var c = session()
+        c.centerSearch(at: 100_000)
+        #expect(c.addSnappedMarker() == nil)                 // nothing found yet
+        c.snapFrame = 98_765
+        #expect(c.addSnappedMarker() == 1)
+        #expect(c.markers == [0, 98_765] && c.selected == 1)
+        #expect(c.addSnappedMarker() == nil)                 // already there
+        c.snapFrame = 0
+        #expect(c.addSnappedMarker() == nil)                 // slice 0 always starts at 0
+        c.clearSearch()
+        #expect(c.searchRange == nil && c.snapFrame == nil)
+    }
+}
