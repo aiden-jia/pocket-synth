@@ -1,3 +1,5 @@
+<img src="App/Assets.xcassets/AppIcon.appiconset/AppIcon.png" alt="PocketSynth app icon" width="128">
+
 # pocket-synth
 
 An iOS instrument app with two panels:
