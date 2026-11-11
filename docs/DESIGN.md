@@ -332,6 +332,7 @@ Unchanged from rev 1, except that the menus are now real touch lists *and* the c
   - Mic input doesn't need the `AUAudioUnit` wrapper after all: an input-node tap pushes audio into a lock-free ring that the engine drains into the recorder. The session switches to play-and-record only while the Sample view uses the mic. Mic takes keep the input's own sample rate.
   - DSPKit is our own code (Accelerate only): spectral-flux onsets, onset-autocorrelation tempo with a loop-length snap, and **WSOLA** time stretch, with pitch shift = stretch + resample. It's good on drums, loops and voice; Signalsmith Stretch remains an option if we want higher quality on dense mixes.
   - Destructive processes create a new sample file and point the pads at it. The old one stays in the pool (archived, hidden) so undo works; "Discard unused audio" deletes archived versions nothing uses.
+  - A process on a slice pad (a trim of a sample other pads share, as after "Slices → pads") acts on that slice only. It copies the slice to a new sample, processes it, and points just that pad at it. The shared sample and the other pads stay as they were. It is one undo step.
   - Chop converts onto the first empty bank, so existing pads aren't overwritten. "Pads + sequence" is one undo step.
   - Not done in phase 4: the looper's per-track MIDI events (phase 5, with MIDI), keygroup "patched phrase" conversion (phase 5, with keygroups), Seq-mode auto-bounce to the looper, and per-pad warp.
 - **After v1:**

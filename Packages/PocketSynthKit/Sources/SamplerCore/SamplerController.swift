@@ -1184,6 +1184,72 @@ public final class SamplerController {
         onChange(project)
     }
 
+    /// What a destructive process on a pad acts on (SAMPLER_SPEC §5.3).
+    public struct ProcessTarget: Equatable, Sendable {
+        public var pad: Int
+        /// The pad's first layer with a sample.
+        public var layer: Int
+        public var sample: SampleID
+        /// The layer's trim, in the sample's frames.
+        public var trim: Range<Int>
+        /// The pad plays only this part of a sample that something else also uses. The
+        /// process then runs on these frames alone, and only this pad gets the result.
+        public var slice: Range<Int>?
+    }
+
+    public func processTarget(pad p: Int) -> ProcessTarget? {
+        let pad = project.program.pads[p]
+        guard let l = pad.layers.firstIndex(where: { $0.sampleID != nil }), let id = pad.layers[l].sampleID,
+              let info = project.sample(id) else { return nil }
+        let layer = pad.layers[l]
+        let end = min(layer.end ?? info.frames, info.frames)
+        let start = min(max(0, layer.start), max(0, end - 1))
+        let trim = start..<end
+        let partial = start > 0 || end < info.frames
+        return ProcessTarget(pad: p, layer: l, sample: id, trim: trim,
+                             slice: partial && isShared(id, outside: p, layer: layer) ? trim : nil)
+    }
+
+    /// Whether anything other than `pad`'s layers playing the same range as `layer` uses `id`.
+    private func isShared(_ id: SampleID, outside pad: Int, layer: PadLayer) -> Bool {
+        for (p, other) in project.program.pads.enumerated() {
+            for l in other.layers where l.sampleID == id {
+                if p != pad || l.start != layer.start || l.end != layer.end { return true }
+            }
+        }
+        if project.keygroups.contains(where: { $0.zones.contains { $0.layers.contains { $0.sampleID == id } } }) { return true }
+        if project.clips.pads.contains(where: { $0.sampleID == id }) { return true }
+        return project.sequences.contains { $0.tracks.contains { $0.audio?.sampleID == id } }
+    }
+
+    /// A process ran on `target`'s slice and made `new`: only that pad's layers playing
+    /// the slice now use `new`, from its start to its end. Other users of the old sample
+    /// stay as they are. One undo step.
+    public func replaceSlice(_ target: ProcessTarget, with new: SampleInfo, label: String) {
+        guard target.slice != nil else { return }
+        var pad = project.program.pads[target.pad]
+        guard pad.layers.indices.contains(target.layer), pad.layers[target.layer].sampleID == target.sample else { return }
+        let old = pad.layers[target.layer]
+        checkpoint(label)
+        if !project.samples.contains(where: { $0.id == new.id }) { project.samples.append(new) }
+        for l in pad.layers.indices where pad.layers[l].sampleID == target.sample
+            && pad.layers[l].start == old.start && pad.layers[l].end == old.end {
+            pad.layers[l].sampleID = new.id
+            pad.layers[l].start = 0
+            pad.layers[l].end = nil
+        }
+        project.program.pads[target.pad] = pad
+        send(.pad(target.pad, pad))
+        onChange(project)
+    }
+
+    /// Puts a processed result where it belongs: on the slice pad alone, or in place of
+    /// the whole sample everywhere.
+    public func applyProcessed(_ target: ProcessTarget, new: SampleInfo, label: String) {
+        if target.slice != nil { replaceSlice(target, with: new, label: label) }
+        else { replaceSample(target.sample, with: new, label: label) }
+    }
+
     private func replaceInKeygroups(_ id: SampleID, _ body: (inout SampleID?) -> Void) {
         for k in project.keygroups.indices {
             var kg = project.keygroups[k]

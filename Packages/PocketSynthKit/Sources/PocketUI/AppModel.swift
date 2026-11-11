@@ -818,20 +818,23 @@ public final class AppModel {
     // MARK: Processes (SAMPLER_SPEC §5.3)
 
     /// Runs a destructive process on the selected pad's sample. The result is a new
-    /// version; the old one stays (archived) so undo works.
+    /// version; the old one stays (archived) so undo works. When the pad plays a slice
+    /// of a sample other pads also use, the process runs on that slice alone (its trim is
+    /// then the whole slice) and only this pad gets the result.
     public func applyProcess(_ make: @escaping @Sendable (AudioData, Range<Int>) -> SampleProcess) {
-        let pad = sampler.selected
-        guard let id = pad.primarySample, let info = sampler.project.sample(id), let audio = audioData(id) else { return }
-        let range = pad.layers[0].start..<(pad.layers[0].end ?? info.frames)
-        let process = make(audio, range)
+        guard let target = sampler.processTarget(pad: sampler.selectedPad),
+              let info = sampler.project.sample(target.sample), let full = audioData(target.sample) else { return }
+        let audio = target.slice.map { full.slice($0) } ?? full
+        let process = make(audio, target.slice.map { 0..<$0.count } ?? target.trim)
+        let name = target.slice == nil ? info.name : "\(info.name) \(PadAddress.name(target.pad))"
         busy = "\(process.label)…"
         Task {
             let result = await Task.detached { audio.applying(process) }.value
             busy = nil
             guard result.frames > 1 else { importMessage = "Nothing left after \(process.label.lowercased())."; return }
             do {
-                let new = try addGenerated(result, name: info.name)
-                sampler.replaceSample(id, with: new, label: process.label)
+                let new = try addGenerated(result, name: name)
+                sampler.applyProcessed(target, new: new, label: process.label)
             } catch {
                 importMessage = "\(process.label) failed: \(error.localizedDescription)"
             }

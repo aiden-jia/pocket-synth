@@ -122,6 +122,7 @@ Sends the track to an external MIDI port and channel, with program change on loa
 - Slices map to pads automatically: slice 1 is on pad A01.
 - Pads play their slice live while you edit.
 - Each slice can be set to non-destructive (start/end references) and to one-shot or note-on.
+- Processes on a slice pad change that slice only (§5.3), so each slice can be pitch-shifted or stretched on its own.
 - **Convert** a chop into one of:
   - a new **Drum program** with non-destructive slice references;
   - **Extract as new samples**, one file per slice;
@@ -133,6 +134,8 @@ Sends the track to an external MIDI port and channel, with program change on loa
 Normalize, Reverse, Gain ±, Fade in/out (curve), Silence, Insert silence, Crop, Delete, Copy/Paste/Mix-paste, DC removal, Pitch shift (±24 st, keep length), Time stretch (to BPM or %, keep pitch), BPM detect, Bit-crush/Resample (lo-fi), Convert to mono/stereo, Discard unused audio.
 
 Every destructive process writes a new file version, so undo is possible.
+
+A process on a slice pad acts on that slice only. When a pad plays part of a sample that other pads also use, the slice is copied into a new sample and processed there. Only that pad moves to the result, from start to end. The other pads keep their sample and trims. The trim-based processes (crop, delete, silence, fades) treat the whole slice as the trim. Pads that play the whole sample, or are its only user, still change the sample for everything that uses it.
 
 ## 6. Sequencer
 
