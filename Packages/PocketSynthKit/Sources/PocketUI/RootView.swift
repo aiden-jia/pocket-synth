@@ -5,6 +5,7 @@ import SwiftUI
 /// Switching panels never stops audio (DESIGN §8).
 public struct RootView: View {
     @State private var model = AppModel()
+    @State private var frames: FrameDriver?
 
     public init() {}
 
@@ -27,12 +28,17 @@ public struct RootView: View {
         // Edge swipes (home indicator, Control Center) shouldn't steal pad touches.
         .defersSystemGestures(on: .all)
         #endif
-        .task {
-            // Engine telemetry (playheads, recorded hits), toasts and idle menus.
-            while !Task.isCancelled {
-                try? await Task.sleep(for: .milliseconds(33))
-                model.frame()
-            }
+        .onAppear {
+            // Every screen refresh: playheads and pad lights; ~30 Hz: telemetry, toasts, menus.
+            guard frames == nil else { return }
+            let model = self.model
+            let driver = FrameDriver { model.displayFrame(at: $0) }
+            driver.start()
+            frames = driver
+        }
+        .onDisappear {
+            frames?.stop()
+            frames = nil
         }
     }
 }
@@ -80,10 +86,7 @@ struct TopBar: View {
                 }
             }
 
-            Text(model.positionText)
-                .font(.system(size: 14, weight: .semibold, design: .monospaced))
-                .foregroundStyle(t.recording != nil ? Color.red : Theme.text)
-                .frame(width: 52, alignment: .leading)
+            PositionReadout(model: model)
 
             let click = model.synth.state.metronome
             BarButton(icon: "metronome.fill", on: click, tint: Theme.warm) { model.synth.setMetronome(!click) }
@@ -106,6 +109,18 @@ struct TopBar: View {
         .padding(.horizontal, 14)
         .padding(.vertical, 6)
         .background(Theme.panel)
+    }
+}
+
+/// "bar.beat": its own view, so the beat ticking over redraws only this text.
+struct PositionReadout: View {
+    let model: AppModel
+
+    var body: some View {
+        Text(model.positionText)
+            .font(.system(size: 14, weight: .semibold, design: .monospaced))
+            .foregroundStyle(model.sampler.transport.recording != nil ? Color.red : Theme.text)
+            .frame(width: 52, alignment: .leading)
     }
 }
 

@@ -25,6 +25,9 @@ struct PadGridLayout: Equatable {
 }
 
 /// The 4×4 pads of the current bank.
+///
+/// The body reads only the geometry; each `SamplerPadCell` reads its own pad's state.
+/// A press then redraws the pads, not this container, and the touch layer isn't rebuilt.
 struct PadGridView: View {
     let model: AppModel
 
@@ -34,20 +37,7 @@ struct PadGridView: View {
             let s = model.sampler
             ZStack(alignment: .topLeading) {
                 ForEach(0..<16, id: \.self) { g in
-                    let pad = PadAddress.pad(bank: s.bank, gridIndex: g)
-                    let p = s.project.program.pads[pad]
-                    let notes = s.track.program.isNotes
-                    let clips = s.track.program == .clip
-                    let stepping = s.view == .grid && s.seqEditor == .step
-                    let clipState = clips ? s.clipStates[g] : .stopped
-                    SamplerPadView(name: stepping ? "\(g + 1)" : clips ? "CLIP \(g + 1)"
-                                       : notes ? PitchName.noteName(s.perform.note(g)) : PadAddress.name(pad),
-                                   sampleName: stepping ? (s.stepIsOn(g) ? "●" : nil)
-                                       : clips ? s.project.sample(s.project.clips.pads[g].sampleID)?.name
-                                       : notes ? s.track.program.label : levelLabel(s, g) ?? s.project.sample(p.primarySample)?.name,
-                                   held: s.heldPads.contains(pad) || clipState == .playing,
-                                   selected: clips ? clipState == .queued || clipState == .stopping : s.selectedPad == pad,
-                                   velocity: clipState == .playing ? 70 : s.lastVelocity[pad])
+                    SamplerPadCell(model: model, gridIndex: g)
                         .frame(width: layout.cells[g].width, height: layout.cells[g].height)
                         .position(x: layout.cells[g].midX, y: layout.cells[g].midY)
                 }
@@ -67,6 +57,35 @@ struct PadGridView: View {
             }
         }
     }
+}
+
+/// One pad of the grid. Lit while touched, while its clip plays, or briefly when the
+/// engine plays it (sequence playback, note repeat).
+struct SamplerPadCell: View {
+    let model: AppModel
+    let gridIndex: Int
+
+    var body: some View {
+        let s = model.sampler
+        let g = gridIndex
+        let pad = PadAddress.pad(bank: s.bank, gridIndex: g)
+        let p = s.project.program.pads[pad]
+        let notes = s.track.program.isNotes
+        let clips = s.track.program == .clip
+        let stepping = s.view == .grid && s.seqEditor == .step
+        let clipState = clips ? s.clipStates[g] : .stopped
+        let touched = s.heldPads.contains(pad)
+        let flash = clips || notes || stepping ? nil : model.padLights.flash(pad)
+        SamplerPadView(name: stepping ? "\(g + 1)" : clips ? "CLIP \(g + 1)"
+                           : notes ? PitchName.noteName(s.perform.note(g)) : PadAddress.name(pad),
+                       sampleName: stepping ? (s.stepIsOn(g) ? "●" : nil)
+                           : clips ? s.project.sample(s.project.clips.pads[g].sampleID)?.name
+                           : notes ? s.track.program.label : levelLabel(s, g) ?? s.project.sample(p.primarySample)?.name,
+                       held: touched || clipState == .playing || flash != nil,
+                       pressed: touched,
+                       selected: clips ? clipState == .queued || clipState == .stopping : s.selectedPad == pad,
+                       velocity: clipState == .playing ? 70 : touched ? s.lastVelocity[pad] : flash)
+    }
 
     private func levelLabel(_ s: SamplerController, _ g: Int) -> String? {
         switch s.sixteenLevels {
@@ -80,7 +99,10 @@ struct PadGridView: View {
 struct SamplerPadView: View {
     let name: String
     let sampleName: String?
+    /// Lit (touched, playing, or just hit by the engine).
     let held: Bool
+    /// Under a finger: only these sink.
+    var pressed = false
     let selected: Bool
     let velocity: Int?
 
@@ -105,8 +127,8 @@ struct SamplerPadView: View {
             .padding(6)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         }
-        .scaleEffect(held ? 0.96 : 1)
-        .animation(.easeOut(duration: 0.05), value: held)
+        .scaleEffect(pressed ? 0.96 : 1)
+        .animation(.easeOut(duration: 0.05), value: pressed)
     }
 }
 

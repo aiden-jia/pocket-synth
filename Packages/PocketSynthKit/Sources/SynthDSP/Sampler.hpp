@@ -63,12 +63,14 @@ public:
         }
 
         const int count = std::clamp(p.layerCount, 0, PS_MAX_LAYERS);
+        bool started = false;
         for (int i = 0; i < count; ++i) {
             const PSLayer &L = p.layers[i];
             if (!L.sample || velocity < L.velocityLow || velocity > L.velocityHigh) continue;
             const int start = std::clamp(L.start, 0, L.sample->frames);
             const int end = std::clamp(L.end <= 0 ? L.sample->frames : L.end, start, L.sample->frames);
             if (end - start < 2) continue;
+            started = true;
 
             SamplerVoice &v = allocate();
             v = SamplerVoice{};
@@ -90,7 +92,16 @@ public:
             v.gainR = static_cast<float>(gain * std::sin(angle) * 1.41421356);
             if (p.attackMs <= 0.05f) { v.env = 1; v.stage = SamplerVoice::Hold; }
         }
+        // Pad lights: the UI polls these every screen refresh, so sequenced hits light too.
+        if (started && pad < PS_SAMPLER_PADS) {
+            hitVelocity_[pad].store(static_cast<uint8_t>(velocity), std::memory_order_relaxed);
+            hitCount_[pad].fetch_add(1, std::memory_order_release);
+        }
     }
+
+    /// How many times each pad has sounded (wraps), and the velocity of its latest hit.
+    uint32_t hitCount(int pad) const { return hitCount_[pad].load(std::memory_order_acquire); }
+    uint8_t hitVelocity(int pad) const { return hitVelocity_[pad].load(std::memory_order_relaxed); }
 
     void release(int pad) {
         for (auto &v : voices_)
@@ -226,6 +237,9 @@ public:
     }
 
 private:
+    std::array<std::atomic<uint32_t>, PS_SAMPLER_PADS> hitCount_{};
+    std::array<std::atomic<uint8_t>, PS_SAMPLER_PADS> hitVelocity_{};
+
     bool envelope(SamplerVoice &v, double attackInc, double decayCoef, double releaseCoef, double sustain) {
         if (v.choking) {
             v.fade -= chokeStep_;

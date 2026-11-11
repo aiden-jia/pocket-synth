@@ -137,8 +137,8 @@ public struct TransportState: Equatable, Sendable {
     /// Bars of metronome before recording starts from stop (0, 1 or 2).
     public var countInBars = 1
     public var metronome = true
-    /// Ticks inside the sequence; negative during the count-in.
-    public var position = 0.0
+    // The playhead lives on the controller (`playhead`), not here: it changes every
+    // frame, and views that only read `transport.playing` shouldn't redraw with it.
 }
 
 /// The sampler panel's brain: banks, pad hits, sample assignment, pad editing, the
@@ -177,6 +177,14 @@ public final class SamplerController {
 
     // Sequencer
     public private(set) var transport = TransportState()
+    /// Playhead in ticks inside the sequence; negative during the count-in. Updated every
+    /// display frame while playing, so only small views (playhead lines) should read it.
+    public private(set) var playhead = 0.0
+    /// The playhead's beat (floor; negative in the count-in). Changes once per beat, for
+    /// views that only need coarse position (bar.beat readout, page follow).
+    public private(set) var playheadBeat = 0
+    /// Playhead at the last `poll` (live erase and replace work on the span between polls).
+    @ObservationIgnored private var polledPosition = 0.0
     public var recordMode: RecordMode = .overdub
     /// While playing, picking another sequence waits for this one to end (or the bar).
     public var nextSequenceMode = false
@@ -355,10 +363,26 @@ public final class SamplerController {
 
     // MARK: - Transport
 
+    /// Display-rate playhead update (the app calls this every screen refresh).
+    public func updatePlayhead(_ ticks: Double) {
+        if transport.playing { setPlayhead(ticks) }
+    }
+
+    private func setPlayhead(_ ticks: Double) {
+        if ticks != playhead { playhead = ticks }
+        let beat = Int((ticks / Double(PPQN.ticks)).rounded(.down))
+        if beat != playheadBeat { playheadBeat = beat }
+    }
+
+    private func resetPlayhead(_ ticks: Double) {
+        setPlayhead(ticks)
+        polledPosition = ticks
+    }
+
     public func play() {
         guard !transport.playing else { return }
         transport.playing = true
-        transport.position = 0
+        resetPlayhead(0)
         send(.transport(playing: true, startTick: 0, countInBeats: 0))
     }
 
@@ -367,7 +391,7 @@ public final class SamplerController {
         songIndex = nil
         queuedSequence = nil
         transport.playing = false
-        transport.position = 0
+        resetPlayhead(0)
         send(.transport(playing: false, startTick: 0, countInBeats: 0))
     }
 
@@ -383,7 +407,7 @@ public final class SamplerController {
         if !transport.playing {
             transport.playing = true
             let countIn = transport.countInBars * project.sequence.beatsPerBar
-            transport.position = Double(-countIn * PPQN.ticks)
+            resetPlayhead(Double(-countIn * PPQN.ticks))
             send(.transport(playing: true, startTick: 0, countInBeats: countIn))
         }
         if audio {
@@ -420,7 +444,7 @@ public final class SamplerController {
         guard var tk = take else { return }
         var seq = project.sequence
         let t = min(takeTrack, seq.tracks.count - 1)
-        tk.finish(at: max(0, Int(transport.position)), in: &seq, track: t)
+        tk.finish(at: max(0, Int(playhead)), in: &seq, track: t)
         project.sequence = seq
         if let before = takeBefore, before != project {
             history.record(before, label: "Record", at: now())
@@ -440,8 +464,11 @@ public final class SamplerController {
             if let last = sequenceGeneration, gen != last { sequenceSwapped() }
             sequenceGeneration = gen
         }
-        let previous = transport.position
-        if transport.playing { transport.position = position }
+        let previous = polledPosition
+        if transport.playing {
+            setPlayhead(position)
+            polledPosition = position
+        }
         var seq = project.sequence
         var changed = false
         let t = min(take != nil ? takeTrack : trackIndex, seq.tracks.count - 1)
@@ -834,8 +861,8 @@ public final class SamplerController {
     public func setParam(_ p: AutoParam, _ v: Double) {
         let first = touching[p] == nil
         if first { checkpoint("Change \(p.label)", key: "param-\(p.label)") }
-        if automationMode == .write, transport.playing, transport.position >= 0 {
-            let tick = Int(transport.position)
+        if automationMode == .write, transport.playing, playhead >= 0 {
+            let tick = Int(playhead)
             let t = trackIndex
             var seq = project.sequence
             var lanes = seq.tracks[t].automation

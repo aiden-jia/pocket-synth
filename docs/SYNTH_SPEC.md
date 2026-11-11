@@ -2,9 +2,9 @@
 
 Working name: **PocketSynth**. The app has two panels: the **Synth** (this file) and the **Sampler** ([SAMPLER_SPEC.md](SAMPLER_SPEC.md)). [DESIGN.md](DESIGN.md) covers *how it's built*.
 
-**Product decisions (2026-11-10):** phone-native presentation (same musical behavior, modern full-screen UI, no artificial hardware limits), landscape-first, personal/sideload project (not the App Store).
+**Product decisions:** phone-native presentation (same musical behavior, modern full-screen UI, no artificial hardware limits), landscape-first, sideloaded rather than distributed through the App Store.
 
-The target behavior is the HiChord pocket chord synth, firmware **Rev 3.0**, Batch 4+ hardware feature set. It was compiled from the manufacturer's public online manual (updater.hichord.shop/manual). We copy **functionality** only: no HiChord name, logo, industrial design, sound samples, or wording. Items tagged **[DECIDE]** are gaps or contradictions in the source that we have to settle ourselves. Each one has a proposed default.
+The target behavior is the HiChord pocket chord synth, firmware **Rev 3.0**, Batch 4+ hardware feature set. It was compiled from the manufacturer's public online manual (updater.hichord.shop/manual). We copy **functionality** only: no HiChord name, logo, industrial design, sound samples, or wording. Where the source has gaps or contradicts itself, this spec states the behavior we chose.
 
 ---
 
@@ -24,8 +24,8 @@ The device has the controls below. The app represents each one as an abstract co
 
 - **Key:** 12 options, default C. **Scale:** 10 options, default Major: Major, Natural Minor, Harmonic Minor, Melodic Minor, Major Pentatonic, Minor Pentatonic, Blues, Dorian, Mixolydian, Lydian.
 - **Pads = diatonic triads** built by stacking scale thirds. In C Major: 1=C, 2=Dm, 3=Em, 4=F, 5=G, 6=Am, 7=B°.
-  - **[DECIDE]** The source doesn't say how 5- and 6-note scales map to 7 pads. Proposal: build chords from a 7-note parent scale (Maj Pent → Major; Min Pent and Blues → Natural Minor). The pentatonic or blues scale then filters only the melodic notes (Lead, Arp RAND).
-- **Global octave** −2…+2 (K + stick ↑/↓). **Per-pad octave** −2…+2 (hold pad + K = down, hold pad + M = up). **[DECIDE]** Whether these add together; proposal: they add, clamped to ±3.
+  - 5- and 6-note scales build their pad chords from a 7-note parent scale (Maj Pent → Major; Min Pent and Blues → Natural Minor). The pentatonic or blues scale then filters only the melodic notes (Lead, Arp RAND).
+- **Global octave** −2…+2 (K + stick ↑/↓). **Per-pad octave** −2…+2 (hold pad + K = down, hold pad + M = up). The two add together, clamped to ±3.
 - **Inversion per pad:** hold pad + S cycles Root → 1st → 2nd.
 - **Voice leading (V.LEAD):** when on, each chord automatically uses the inversion closest to the previous chord. The display shows "VLEAD AUTO" when you press for an inversion.
 - **Voice count:** 8 / 4 / 2 / 1 oscillators. That is full and doubled / lighter / root + 1 / mono.
@@ -49,7 +49,7 @@ Hold a pad and push the stick: the chord changes while held and snaps back on re
 | ↖ | aug (min gets maj 3rd; dim→aug) | ø7 | 7♭9 | tritone sub: root +6 st → 7 |
 
 - **OG** works like STD, except 9th chords use the legacy voicing (doubled 3rd on top).
-- **[DECIDE]** Many minor and dim cases are unspecified, e.g. STD ↗ on a minor chord, or EXT ↓ on dim. Proposal: apply the chord type literally to the pad's root (↗ on Dm → D7). The golden-table tests (DESIGN §9) pin down every one of the 7 pads × 8 directions × 5 modes.
+- Minor and dim cases the table doesn't cover (e.g. STD ↗ on a minor chord, or EXT ↓ on dim) apply the chord type literally to the pad's root (↗ on Dm → D7). The golden-table tests (DESIGN §9) pin down every one of the 7 pads × 8 directions × 5 modes.
 
 ### 2.2 Chord vocabulary (26 types, semitones from root)
 
@@ -62,7 +62,7 @@ Hold a pad and push the stick: the chord changes while held and snaps back on re
 | aug | 0 4 8 | 9 | 0 4 7 10 14 |
 | sus4 | 0 5 7 | 7♯9 | 0 4 7 10 15 |
 | sus2 | 0 2 7 | 7♭9 | 0 4 7 10 13 |
-| maj7 | 0 4 7 11 | 7alt | 0 4 8 10 15 **[DECIDE]** (♯5♯9) |
+| maj7 | 0 4 7 11 | 7alt | 0 4 8 10 15 (♯5♯9) |
 | m7 | 0 3 7 10 | add9 | 0 4 7 14 |
 | 7 | 0 4 7 10 | add11 | 0 4 7 17 |
 | 6 | 0 4 7 9 | m11 | 0 3 7 10 17 |
@@ -75,7 +75,7 @@ The voice budget is 5 chord tones + 1 bass. When a chord has more tones, the 5th
 
 - **Polyphony:** each chord uses up to 5 tones plus bass, as on the device. Phone-native change: the voice pool is 32, so release tails overlap instead of being stolen. Each voice is a stereo pair. Each pair is a main oscillator panned L and a detuned (±5–15 cents) partner panned R. Bass is one centered oscillator. A Stereo setting switches between this spread and mono.
 - **Engines:** Analog (sine, saw, square, triangle) · 2-operator FM · Sample (±24 st transpose) · Noise (white, pink, resonant, metallic) · Hybrid (stack of the others).
-- **Built-in sounds (28, our own designs):** saw, saw bass (glide on), piano, tine EP, organ, strings, horns, brass, electric guitar, clarinet, flute, grand piano, retro EP, vox "ahh", vibraphone, FM EP, acoustic guitar, harp, buzz organ, humming, sine, FM "wow", synth bass, percussive "shutter", triangle, square, saw+square, ocean pad. Two hidden sounds: FM piano (quick-select only) and wind (randomize only). Sample-based sounds use samples you own or record. This is a personal build, but the device's own samples are never extracted.
+- **Built-in sounds (28, our own designs):** saw, saw bass (glide on), piano, tine EP, organ, strings, horns, brass, electric guitar, clarinet, flute, grand piano, retro EP, vox "ahh", vibraphone, FM EP, acoustic guitar, harp, buzz organ, humming, sine, FM "wow", synth bass, percussive "shutter", triangle, square, saw+square, ocean pad. Two hidden sounds: FM piano (quick-select only) and wind (randomize only). Sample-based sounds use samples you own or record; the device's own samples are never extracted.
 - **Quick sound:** S + pad 1–7 → saw, sine, FM EP, FM piano, strings, clarinet, FM wow.
 - **Envelope presets:**
 
@@ -119,22 +119,22 @@ Order: **PLAY, STRUM, LEAD, DRONE, ARP, REPEAT, SEQ, DRUMS, BEAT, GAME, TRAINER,
 |---|---|
 | Play | Polyphonic: the chord sounds while held |
 | Strum | Notes roll root→3rd→5th→ext at 200 / 80 (default) / 40 ms. Bass sounds on the first note |
-| Lead | Mono, plays the root note only, and the newest note cuts the previous one (multiple held pads sound multiple roots). Stick ↑/↓ = ±octave, →/← = ±1 semitone, snapping back. **[DECIDE]** wrap rule |
+| Lead | Mono, plays the root note only, and the newest note cuts the previous one (multiple held pads sound multiple roots). Stick ↑/↓ = ±octave, →/← = ±1 semitone, snapping back; diagonals do nothing. Notes don't wrap |
 | Drone | The chord latches until the mode changes. A new chord crossfades in |
 | Arp | One note at a time, tempo-synced. Patterns UP, DOWN, UP/DN, DN/UP, RAND (K + pad 1–5) plus user fingerpick patterns. Layer modes ARP / CHORD+ARP / RHYTHM+ARP (K + pad 7). Rates 1/1, 1/2, 1/4, 1/8 (default), 1/16, 1/16T, 1/32, swing 8, swing 16. The release time sets the gate |
 | Repeat | The chord retriggers at the arp rates, or with STUT (a 32-step gate pattern). Release is capped at 200 ms while active |
 | Seq | Up to 16 chord steps in pages of 4. Each step holds root, type and bass mode. See §4.1 |
-| Drums | Each pad plays a drum hit. Pick a kit with menu + pad. Hold a pad + push the stick to auto-repeat it at a rate set by the direction: ↑ 1/4, → 1/8, ↓ 1/16, ← 1/32, ↗ swing 8, ↘ swing 16, ↙ 1/16T, ↖ **[DECIDE]** 1/8T |
+| Drums | Each pad plays a drum hit. Pick a kit with menu + pad. Hold a pad + push the stick to auto-repeat it at a rate set by the direction: ↑ 1/4, → 1/8, ↓ 1/16, ← 1/32, ↗ swing 8, ↘ swing 16, ↙ 1/16T, ↖ 1/8T |
 | Beat | 7 styles (rock, break, dub, funk, house, dembow, swing) × 8 variations (orig, ghost, 16th, push, fill, half, double, perc). A pad starts, stops or switches the style. Hold the pad + ↑/↓ for variation. Click bounces the beat to the looper |
 | Game | Rhythm game: chords scroll to a hit line. 10 songs in 5 tiers, practice speed 50–100%. **Our own songs and design** |
 | Trainer | Ear training in 6 levels: interval up; interval up/down; diatonic triad; 4-chord progression; modified chord; modified progression |
 | Tuner | Chromatic tuner using the mic |
-| Mic | Hold pad 1 to record (≤3 s **[DECIDE]**: keep 1 s after onset). The take is pitch-detected and transposed to C, then the app switches to Lead |
+| Mic | Hold pad 1 to record (up to 3 s; the app keeps 1 s from the first sound). The take is pitch-detected and transposed to C, then the app switches to Lead |
 | Mixer | Pad 1–6 tap = mute. Hold + wheel = level. Hold + S = solo. Pad 7 = metronome on/off; hold 7 + wheel = metronome level. Click = stop/start all |
 
-**Decided in phase 3:** Drums ↖ = 1/8T. Swing rates (S8, S16, ↗/↘ rolls) use 62 %. "Hold →" in Seq mode is a stick push released without pressing a pad, so a push *with* a pad stores a modified chord instead. The arp gate is the release time, kept between 10 % and 95 % of the step. CHORD+ARP and RHYTHM+ARP play the arp an octave up so it doesn't collide with the held chord.
+**Rhythm details.** Swing rates (S8, S16, ↗/↘ rolls) use 62 %. "Hold →" in Seq mode is a stick push released without pressing a pad, so a push *with* a pad stores a modified chord instead. The arp gate is the release time, kept between 10 % and 95 % of the step. CHORD+ARP and RHYTHM+ARP play the arp an octave up so it doesn't collide with the held chord.
 
-**Decided in phase 4:** The looper cursor moves with the stick when nothing is held and no menu is open: ←/→ pick a track, ↓ the transport, ↑ back. Loop length is a setting (Sound › ↑ › LOOP: FREE or 1–8 bars). The first take can go on any track when no loop exists yet. In Mixer mode a pad tap mutes; holding a pad for solo or level doesn't. In Beat mode the click records the beat into the looper like any other take.
+**Looper details.** The looper cursor moves with the stick when nothing is held and no menu is open: ←/→ pick a track, ↓ the transport, ↑ back. Loop length is a setting (Sound › ↑ › LOOP: FREE or 1–8 bars). The first take can go on any track when no loop exists yet. In Mixer mode a pad tap mutes; holding a pad for solo or level doesn't. In Beat mode the click records the beat into the looper like any other take.
 
 **Sequencer controls.** Press a pad to fill the cursor step. Hold → to advance; holding → on the last step adds one. Stick + pad stores a modified chord. Editing only works while stopped. Click = play/stop, quantized to the looper's loop point if one is playing. Hold ↓ / ↑ = next / previous page; ↑ on page 1 cycles the rhythm rate. Hold click + ↑ for 1 s trims empty steps. Leaving the mode while playing auto-bounces the sequence to the looper.
 
@@ -165,7 +165,7 @@ S and K randomize are refused while a looper track is recording.
 
 - 4 quick slots: open the preset menu, use ←/→ for the slot, ↑ = save, ↓ = load, then confirm. A save is skipped while recording. A preset is a full session snapshot of 100+ parameters, including chord locks plus the scale they were locked in, and the sequence.
 - Sound library: **unlimited** in-app (the device has 32 slots). User samples are imported from Files and trimmed to ~1.4 s, with a root note set by the user.
-- Session state (loops, sound, key, tempo, mode) is restored on relaunch. **[DECIDE]** The device loses its session on power-off; we keep ours, because a phone app should survive being backgrounded.
+- Session state (loops, sound, key, tempo, mode) is restored on relaunch. The device loses its session on power-off; the app keeps it, because a phone app should survive being backgrounded.
 
 ## 9. MIDI
 
@@ -205,6 +205,6 @@ The 64×32 OLED look, the 6-voice stealing, the 20 s loop cap, battery meter, sl
 | pad + K / pad + M | That pad's octave −1 / +1 |
 | pad + S | Cycle that pad's inversion |
 | pad + stick + S | Toggle chord lock |
-| K + S together | Preset menu **[DECIDE]** (glyph missing in source) |
+| K + S together | Preset menu |
 | any pad press | Closes the open menu and plays the chord |
 | idle 5 s | Closes the K menu and the preset menu |

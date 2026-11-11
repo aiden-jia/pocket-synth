@@ -120,10 +120,7 @@ struct AudioTrackView: View {
                         .font(.caption).foregroundStyle(recording ? Color.red : Theme.dim)
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
-                if sampler.transport.playing, sampler.transport.position >= 0 {
-                    Rectangle().fill(recording ? Color.red : Theme.text).frame(width: 1.5)
-                        .offset(x: w * sampler.transport.position / len)
-                }
+                RegionPlayhead(sampler: sampler, width: w, length: len, recording: recording)
             }
         }
     }
@@ -281,6 +278,21 @@ struct RetroKey: View {
             }
         } label: {
             KeyLabel(label: "RETRO", on: model.retroHits > 0, tint: Theme.accent)
+        }
+    }
+}
+
+/// The audio track strip's playhead, on its own so it can move every frame.
+private struct RegionPlayhead: View {
+    let sampler: SamplerController
+    let width: CGFloat
+    let length: Double
+    let recording: Bool
+
+    var body: some View {
+        if sampler.transport.playing, sampler.playhead >= 0 {
+            Rectangle().fill(recording ? Color.red : Theme.text).frame(width: 1.5)
+                .offset(x: width * sampler.playhead / max(1, length))
         }
     }
 }

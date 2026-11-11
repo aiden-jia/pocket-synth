@@ -5,50 +5,19 @@ import SynthCore
 /// The synth panel: status screen, 7 chord pads, 3 menu keys, joystick and wheel.
 /// Drawing is pure SwiftUI; all touches go through one multitouch layer on top.
 struct SynthPanelView: View {
-    @Bindable var model: AppModel
+    let model: AppModel
 
+    // The body reads only the geometry: each layer below reads just the state it draws,
+    // so a stick move redraws the joystick, a pad press the pads, and so on. Nothing here
+    // re-runs on a touch, so the touch layer is never rebuilt mid-gesture.
     var body: some View {
         GeometryReader { geo in
             let layout = SynthSurfaceLayout(size: geo.size)
-            let synth = model.synth
             ZStack(alignment: .topLeading) {
-                let display = synth.display
-                StatusScreen(display: display)
-                    .place(layout.screen)
-                if case .game(let g)? = display.tool, g.running {
-                    GameLaneView(columns: layout.pads.map { $0.midX - layout.screen.minX },
-                                 lane: { model.synth.gameLane(at: $0) })
-                        .place(layout.screen)
-                        .allowsHitTesting(false)
-                }
-                if !synth.state.mode.isTool { // tools hide the looper
-                    LooperMenu(model: model)
-                        .position(x: layout.screen.maxX - 24, y: layout.screen.maxY - 22)
-                        .zIndex(1)
-                }
-
-                ForEach(MenuKey.allCases, id: \.self) { k in
-                    MenuKeyView(key: k, held: synth.isMenuHeld.contains(k))
-                        .place(layout.menuKeys[k]!)
-                }
-
-                ForEach(1...7, id: \.self) { pad in
-                    PadView(pad: pad,
-                            label: synth.padLabel(pad),
-                            held: synth.heldPads.contains(pad),
-                            sounding: synth.sounding[pad] != nil,
-                            locked: synth.state.locks[pad] != nil,
-                            octave: synth.state.padOctave[pad - 1])
-                        .place(layout.pads[pad - 1])
-                }
-
-                JoystickView(offset: model.stickOffset,
-                             direction: synth.stick,
-                             modeLabel: synth.state.stickMode.shortName)
-                    .place(layout.joystick)
-
-                WheelView(label: wheelLabel(synth))
-                    .place(layout.wheel)
+                SynthScreenLayer(model: model, layout: layout)
+                SynthKeysLayer(synth: model.synth, layout: layout)
+                SynthPadsLayer(synth: model.synth, layout: layout)
+                SynthStickLayer(model: model, layout: layout)
 
                 #if canImport(UIKit)
                 SynthTouchSurface(layout: layout,
@@ -58,13 +27,89 @@ struct SynthPanelView: View {
             }
         }
     }
+}
 
-    private func wheelLabel(_ s: SynthController) -> String {
-        let held = s.isMenuHeld
+/// Status screen, game lanes and the looper menu.
+private struct SynthScreenLayer: View {
+    let model: AppModel
+    let layout: SynthSurfaceLayout
+
+    var body: some View {
+        let synth = model.synth
+        let display = synth.display
+        ZStack(alignment: .topLeading) {
+            StatusScreen(display: display)
+                .place(layout.screen)
+            if case .game(let g)? = display.tool, g.running {
+                GameLaneView(columns: layout.pads.map { $0.midX - layout.screen.minX },
+                             lane: { model.synth.gameLane(at: $0) })
+                    .place(layout.screen)
+                    .allowsHitTesting(false)
+            }
+            if !synth.state.mode.isTool { // tools hide the looper
+                LooperMenu(model: model)
+                    .position(x: layout.screen.maxX - 24, y: layout.screen.maxY - 22)
+                    .zIndex(1)
+            }
+        }
+    }
+}
+
+/// The K/S/M keys and the wheel.
+private struct SynthKeysLayer: View {
+    let synth: SynthController
+    let layout: SynthSurfaceLayout
+
+    var body: some View {
+        let held = synth.isMenuHeld
+        ZStack(alignment: .topLeading) {
+            ForEach(MenuKey.allCases, id: \.self) { k in
+                MenuKeyView(key: k, held: held.contains(k))
+                    .place(layout.menuKeys[k]!)
+            }
+            WheelView(label: wheelLabel(held))
+                .place(layout.wheel)
+        }
+    }
+
+    private func wheelLabel(_ held: Set<MenuKey>) -> String {
         if held == [.key] { return "ATK" }
         if held == [.sound] { return "REL" }
         if held == [.mode] { return "CUT" }
         return "VOL"
+    }
+}
+
+/// The 7 chord pads.
+private struct SynthPadsLayer: View {
+    let synth: SynthController
+    let layout: SynthSurfaceLayout
+
+    var body: some View {
+        ZStack(alignment: .topLeading) {
+            ForEach(1...7, id: \.self) { pad in
+                PadView(pad: pad,
+                        label: synth.padLabel(pad),
+                        held: synth.heldPads.contains(pad),
+                        sounding: synth.sounding[pad] != nil,
+                        locked: synth.state.locks[pad] != nil,
+                        octave: synth.state.padOctave[pad - 1])
+                    .place(layout.pads[pad - 1])
+            }
+        }
+    }
+}
+
+/// The joystick: redraws on every stick move, so it reads nothing else.
+private struct SynthStickLayer: View {
+    let model: AppModel
+    let layout: SynthSurfaceLayout
+
+    var body: some View {
+        JoystickView(offset: model.stickOffset,
+                     direction: model.synth.stick,
+                     modeLabel: model.synth.state.stickMode.shortName)
+            .place(layout.joystick)
     }
 }
 

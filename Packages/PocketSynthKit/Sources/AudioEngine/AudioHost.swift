@@ -3,8 +3,7 @@ import SynthDSP
 
 /// Owns the audio session and AVAudioEngine, and pulls audio from the C engine.
 ///
-/// Phase 0 uses an AVAudioSourceNode. The AUAudioUnit wrapper (needed for mic input and
-/// the later AUv3 build) replaces it when sampling arrives (DESIGN §6, "Hosting").
+/// The engine renders through an AVAudioSourceNode (DESIGN §10, phase 2 notes).
 @MainActor
 public final class AudioHost {
     private let avEngine = AVAudioEngine()
@@ -14,6 +13,21 @@ public final class AudioHost {
 
     public init() {}
 
+    /// The IO buffer we ask for: 64 frames (1.3 ms at 48 kHz), the smallest iOS grants on
+    /// the built-in speaker. It is the biggest part of touch-to-sound delay we control.
+    /// (Bluetooth outputs ignore it and use their own, much longer, buffers.)
+    nonisolated static let preferredBufferSeconds = 64.0 / 48_000.0
+
+    /// The IO buffer the system actually granted, in frames.
+    public var ioBufferFrames: Int {
+        #if os(iOS)
+        let s = AVAudioSession.sharedInstance()
+        return Int((s.ioBufferDuration * s.sampleRate).rounded())
+        #else
+        return 0
+        #endif
+    }
+
     /// Configures the session and returns the hardware sample rate to build the engine with.
     @discardableResult
     public func prepareSession() -> Double {
@@ -22,12 +36,13 @@ public final class AudioHost {
         do {
             try session.setCategory(.playback, mode: .default, options: [])
             try session.setPreferredSampleRate(48_000)
-            try session.setPreferredIOBufferDuration(128.0 / 48_000.0) // ~2.7 ms
+            try session.setPreferredIOBufferDuration(Self.preferredBufferSeconds)
             try session.setActive(true)
         } catch {
             print("AudioHost: session setup failed: \(error)")
         }
         sampleRate = session.sampleRate
+        print("AudioHost: \(Int(sampleRate)) Hz, IO buffer \(ioBufferFrames) frames, output latency \(Int(session.outputLatency * 1000)) ms")
         #else
         sampleRate = avEngine.outputNode.outputFormat(forBus: 0).sampleRate
         #endif
@@ -107,6 +122,7 @@ public final class AudioHost {
         let session = AVAudioSession.sharedInstance()
         do {
             try session.setCategory(.playAndRecord, mode: .default, options: [.defaultToSpeaker, .allowBluetoothA2DP])
+            try session.setPreferredIOBufferDuration(Self.preferredBufferSeconds)
             try session.setActive(true)
         } catch {
             return false
@@ -127,7 +143,9 @@ public final class AudioHost {
         avEngine.inputNode.removeTap(onBus: 0)
         inputEnabled = false
         #if os(iOS)
-        try? AVAudioSession.sharedInstance().setCategory(.playback, mode: .default, options: [])
+        let session = AVAudioSession.sharedInstance()
+        try? session.setCategory(.playback, mode: .default, options: [])
+        try? session.setPreferredIOBufferDuration(Self.preferredBufferSeconds)
         #endif
         if !avEngine.isRunning { try? avEngine.start() }
     }

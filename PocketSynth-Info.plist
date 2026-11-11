@@ -7,6 +7,10 @@
 	<true/>
 	<key>LSSupportsOpeningDocumentsInPlace</key>
 	<true/>
+	<!-- Let ProMotion iPhones run the app at 120 Hz: touches then arrive every 8 ms
+	     instead of every 16 ms, which cuts touch-to-sound delay. -->
+	<key>CADisableMinimumFrameDurationOnPhone</key>
+	<true/>
 	<!-- Sampler mode records from the microphone (only while sampling). -->
 	<key>NSMicrophoneUsageDescription</key>
 	<string>PocketSynth records from the microphone when you sample.</string>

@@ -255,7 +255,6 @@ struct StepEditorView: View {
             Text(notes ? "Pick the note with − / + or by playing a pad in another view. Pads 1–16 toggle steps here."
                        : "Hit a pad in another view to pick its lane. Here pads 1–16 toggle steps.")
                 .font(.caption).foregroundStyle(Theme.dim)
-            let playStep = playingStep(page: page)
             LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 6), count: 8), spacing: 6) {
                 ForEach(0..<SamplerController.stepsPerPage, id: \.self) { i in
                     let on = sampler.stepIsOn(i)
@@ -265,7 +264,7 @@ struct StepEditorView: View {
                             .frame(maxWidth: .infinity, minHeight: 44)
                             .foregroundStyle(on ? Theme.background : Theme.dim)
                             .background(RoundedRectangle(cornerRadius: 8).fill(on ? Theme.accent : (i % 4 == 0 ? Theme.raised : Theme.panel)))
-                            .overlay(RoundedRectangle(cornerRadius: 8).stroke(Theme.text, lineWidth: playStep == i ? 2 : 0))
+                            .overlay(StepPlayMarker(sampler: sampler, page: page, index: i))
                     }
                     .buttonStyle(.plain)
                 }
@@ -274,9 +273,22 @@ struct StepEditorView: View {
         }
     }
 
-    private func playingStep(page: Int) -> Int? {
-        guard sampler.transport.playing, sampler.transport.position >= 0 else { return nil }
-        let step = Int(sampler.transport.position) / sampler.stepTicks
-        return step / SamplerController.stepsPerPage == page ? step % SamplerController.stepsPerPage : nil
+}
+
+/// The playing step's outline: a tiny view of its own, so the playhead moving redraws
+/// only these outlines, not the step grid.
+private struct StepPlayMarker: View {
+    let sampler: SamplerController
+    let page: Int
+    let index: Int
+
+    var body: some View {
+        RoundedRectangle(cornerRadius: 8).stroke(Theme.text, lineWidth: playing ? 2 : 0)
+    }
+
+    private var playing: Bool {
+        guard sampler.transport.playing, sampler.playhead >= 0 else { return false }
+        let step = Int(sampler.playhead) / sampler.stepTicks
+        return step / SamplerController.stepsPerPage == page && step % SamplerController.stepsPerPage == index
     }
 }

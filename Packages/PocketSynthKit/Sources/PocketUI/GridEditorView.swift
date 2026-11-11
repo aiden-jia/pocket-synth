@@ -31,6 +31,8 @@ struct GridEditorView: View {
                                      values: (0..<16).map { sampler.laneValue(15 - $0) })
                 ZStack(alignment: .topLeading) {
                     Canvas { ctx, _ in draw(ctx, g) }
+                    // Separate view: the playhead moves every frame, the notes don't.
+                    GridPlayhead(sampler: sampler, geometry: g)
                     laneLabels(g)
                     // UIKit touches: SwiftUI drag gestures drop quick successive taps.
                     #if canImport(UIKit)
@@ -41,13 +43,14 @@ struct GridEditorView: View {
         }
     }
 
-    /// Page shown: follows the playhead while playing.
+    /// Page shown: follows the playhead while playing. Reads the playhead's beat, which
+    /// changes once a beat, so the notes aren't redrawn every frame.
     private var currentPage: Int {
         let seq = sampler.sequence
         let pages = GridGeometry.pages(seq)
-        if sampler.transport.playing, sampler.transport.position >= 0 {
+        if sampler.transport.playing, sampler.playheadBeat >= 0 {
             let windowTicks = GridGeometry.visibleBars(seq) * seq.ticksPerBar
-            return min(pages - 1, Int(sampler.transport.position) / max(1, windowTicks))
+            return min(pages - 1, sampler.playheadBeat * PPQN.ticks / max(1, windowTicks))
         }
         return min(page, pages - 1)
     }
@@ -100,14 +103,6 @@ struct GridEditorView: View {
             let h = vr.height * Double(e.velocity) / 127
             let bar = CGRect(x: x, y: vr.maxY - h, width: 4, height: h)
             ctx.fill(Path(bar), with: .color(e.id == selectedEvent ? Theme.warm : Theme.accent))
-        }
-
-        // Playhead
-        let pos = sampler.transport.position
-        if sampler.transport.playing, pos >= 0, g.visible(Int(pos)) {
-            let x = g.x(Int(pos))
-            let p = Path { $0.move(to: CGPoint(x: x, y: 0)); $0.addLine(to: CGPoint(x: x, y: vr.maxY)) }
-            ctx.stroke(p, with: .color(sampler.transport.recording != nil ? .red : Theme.text), lineWidth: 1.5)
         }
     }
 
@@ -361,5 +356,26 @@ struct ToolButton: View {
                 .background(RoundedRectangle(cornerRadius: 6).fill(on ? Theme.accent : Theme.raised))
         }
         .buttonStyle(.plain)
+    }
+}
+
+/// The grid's playhead line, on its own so it can move every frame.
+private struct GridPlayhead: View {
+    let sampler: SamplerController
+    let geometry: GridGeometry
+
+    var body: some View {
+        let g = geometry
+        let pos = sampler.playhead
+        let show = sampler.transport.playing && pos >= 0 && g.visible(Int(pos))
+        let color = sampler.transport.recording != nil ? Color.red : Theme.text
+        Canvas { ctx, _ in
+            guard show else { return }
+            let x = g.x(Int(pos))
+            let bottom = g.lanesHeight + 4 + g.velocityHeight
+            let p = Path { $0.move(to: CGPoint(x: x, y: 0)); $0.addLine(to: CGPoint(x: x, y: bottom)) }
+            ctx.stroke(p, with: .color(color), lineWidth: 1.5)
+        }
+        .allowsHitTesting(false)
     }
 }

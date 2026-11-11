@@ -5,11 +5,11 @@ An iOS instrument app with two panels:
 - a pocket **chord synth**: 7 diatonic chord pads, a chord-bending joystick, and synth modes (strum, arp…);
 - an MPC-style **sampler**: pads, slicing, a sequencer and song mode.
 
-Personal project. See [docs/DESIGN.md](docs/DESIGN.md) for the architecture, and [docs/SYNTH_SPEC.md](docs/SYNTH_SPEC.md) / [docs/SAMPLER_SPEC.md](docs/SAMPLER_SPEC.md) for behavior.
+See [docs/DESIGN.md](docs/DESIGN.md) for the architecture, and [docs/SYNTH_SPEC.md](docs/SYNTH_SPEC.md) / [docs/SAMPLER_SPEC.md](docs/SAMPLER_SPEC.md) for behavior.
 
 ## Status
 
-Phases 0–5 (see DESIGN §10) are done. Phase 6 is done for v1 (synth tools, vocoder, and the sampler's arpeggiator, retro record, audio tracks, clips and auto-sampler); synth editors, iPad layout and AUv3 are left as todo. Game and Trainer are checked in the simulator; the mic features are not checked yet.
+Phases 0–5 (see DESIGN §10) are done. Phase 6 is done for v1 (synth tools, vocoder, and the sampler's arpeggiator, retro record, audio tracks, clips and auto-sampler); synth editors, iPad layout and AUv3 come after v1. Game and Trainer are checked in the simulator; the mic features are not checked yet.
 
 | Area | State |
 |---|---|

@@ -45,7 +45,7 @@ public enum StickModifier {
     }
 
     // Maj↔min flip. Dim and aug have no "flipped" type in the vocabulary, so they go
-    // to the nearest triad with the other third ([DECIDE]).
+    // to the nearest triad with the other third (a choice; the source is silent).
     static let flip = Rule.byFamily(major: .minor, minor: .major, diminished: .major,
                                     augmented: .minor, suspended: .major)
 

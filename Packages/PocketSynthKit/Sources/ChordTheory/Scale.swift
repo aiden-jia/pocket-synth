@@ -35,7 +35,7 @@ public enum Scale: String, CaseIterable, Codable, Sendable {
     }
 
     /// The 7-note scale the pads' chords are built from. Pentatonic and blues scales
-    /// use a parent scale (SYNTH_SPEC §2 [DECIDE]); their own notes still drive
+    /// use a parent scale (SYNTH_SPEC §2); their own notes still drive
     /// melodic features such as Lead and random arps.
     public var chordScale: Scale {
         switch self {

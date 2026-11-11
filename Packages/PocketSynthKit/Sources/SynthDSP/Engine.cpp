@@ -1327,4 +1327,12 @@ int ps_sampler_active_voices(const PSEngine *engine) {
     return engine->samplerActive.load(std::memory_order_relaxed);
 }
 
+void ps_sampler_pad_hits(const PSEngine *engine, unsigned int *counts, unsigned char *velocities, int max) {
+    const int n = std::clamp(max, 0, static_cast<int>(PS_SAMPLER_PADS));
+    for (int i = 0; i < n; ++i) {
+        counts[i] = engine->sampler.hitCount(i);
+        velocities[i] = engine->sampler.hitVelocity(i);
+    }
+}
+
 } // extern "C"

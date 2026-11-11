@@ -38,7 +38,7 @@ public enum ChordType: String, CaseIterable, Codable, Sendable {
         case .major13: [0, 4, 11, 14, 21] // 5th dropped to fit the 5-tone budget
         case .sixNine: [0, 4, 7, 9, 14]
         case .dominant7flat9: [0, 4, 7, 10, 13]
-        case .dominant7alt: [0, 4, 8, 10, 15] // ♯5 ♯9 (SYNTH_SPEC [DECIDE])
+        case .dominant7alt: [0, 4, 8, 10, 15] // ♯5 ♯9 (SYNTH_SPEC §2.2)
         }
     }
 

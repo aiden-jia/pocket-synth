@@ -520,6 +520,10 @@ void ps_engine_render(PSEngine *engine, float *left, float *right, int frames);
 int ps_engine_active_voices(const PSEngine *engine);
 /// Sampler voices currently producing sound.
 int ps_sampler_active_voices(const PSEngine *engine);
+/// Pad lights: copies, for the first `max` pads, how many times each has sounded (a
+/// wrapping counter; compare with the last read) and its latest hit's velocity.
+/// Covers live hits, note repeat and sequence playback. Safe from any thread.
+void ps_sampler_pad_hits(const PSEngine *engine, unsigned int *counts, unsigned char *velocities, int max);
 
 #ifdef __cplusplus
 }

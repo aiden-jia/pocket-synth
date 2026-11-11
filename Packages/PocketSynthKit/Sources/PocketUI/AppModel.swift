@@ -44,6 +44,9 @@ public final class AppModel {
     @ObservationIgnored private var synthMicTake = false
     @ObservationIgnored private var tunerSmoother = TunerSmoother()
     @ObservationIgnored private var frameCount = 0
+    @ObservationIgnored private var lastHousekeeping = -1.0
+    /// Sampler pads lit by engine hits (sequence playback, note repeat).
+    let padLights = PadLights()
     static let micSampleID = SampleID("synth-mic-sample")
 
     // Retrospective record, audio-track takes, auto-sampler (phase 6, sampler)
@@ -124,12 +127,26 @@ public final class AppModel {
         synth.handle(event, at: time)
     }
 
-    /// Called ~30×/s: engine telemetry (recorded hits, playheads) and housekeeping.
+    /// Called every screen refresh (up to 120 Hz): only what you watch move — playheads
+    /// and pad lights — so they track the audio closely. Each update only writes state
+    /// when it changed, so views redraw only then. The rest runs ~30×/s in `frame()`.
+    public func displayFrame(at time: Double = AppModel.now) {
+        sampler.updatePlayhead(bridge.transportTicks)
+        padLights.update(bridge, now: time)
+        sampler.updateClipStates(bridge.clipStates)
+        let step = synth.seqPlaying ? bridge.chordSequencePosition : nil
+        if synth.seqPlayhead != step { synth.seqPlayhead = step }
+        // Housekeeping at ~30 Hz (a little slack so 60 and 120 Hz screens both hit it).
+        if time - lastHousekeeping >= 1.0 / 30 - 0.003 {
+            lastHousekeeping = time
+            frame()
+        }
+    }
+
+    /// Called ~30×/s: engine telemetry (recorded hits, looper) and housekeeping.
     public func frame() {
         sampler.poll(hits: bridge.pollRecorded(), position: bridge.transportTicks,
                      enginePlaying: bridge.transportPlaying, sequenceGeneration: bridge.sequenceGeneration)
-        let step = synth.seqPlaying ? bridge.chordSequencePosition : nil
-        if synth.seqPlayhead != step { synth.seqPlayhead = step }
         synth.updateLooper(bridge.looperReports, length: bridge.looperLength, position: bridge.looperPosition)
         let ch = synth.liveMIDIChannel
         if ch != liveChannel {
@@ -140,7 +157,6 @@ public final class AppModel {
         synth.tick(at: Self.now)
         retro.add(bridge.pollRetro(time: Self.now), now: Self.now)
         if retro.hitCount != retroHits { retroHits = retro.hitCount }
-        sampler.updateClipStates(bridge.clipStates)
         updateMicInput()
         frameCount += 1
         if synth.state.mode == .tuner, frameCount % 3 == 0 { updateTuner() }
@@ -168,10 +184,9 @@ public final class AppModel {
 
     /// Position as "bar.beat" (1-based); count-in shows as "-1.4" etc.
     public var positionText: String {
-        let t = sampler.transport.position
         let bpb = sampler.sequence.beatsPerBar
-        let beat = Int((t / Double(PPQN.ticks)).rounded(.down))
-        if t < 0 { return "IN \(-beat)" }
+        let beat = sampler.playheadBeat // changes once a beat, not every frame
+        if beat < 0 { return "IN \(-beat)" }
         return "\(beat / bpb + 1).\(beat % bpb + 1)"
     }
 
@@ -377,7 +392,7 @@ public final class AppModel {
             return sampler.stop()
         }
         let seq = sampler.sequence
-        let startTick = sampler.transport.position
+        let startTick = sampler.playhead
         let remaining = Double(seq.lengthTicks) - startTick
         let seconds = remaining / Double(PPQN.ticks) * 60 / bpm + 1
         audioTake = (track, startTick, sampling.source)

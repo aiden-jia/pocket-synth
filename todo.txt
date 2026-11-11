@@ -1,5 +1,2 @@
 1. smart sample slicing (by where user wants)
     ability to modulate sample pitch
-2. improve response time
-    cut unnecessary redraws, drive pad lights and the playhead from the display’s refresh rate, and try a 64-sample buffer
-3. 

@@ -7,12 +7,12 @@ The app has two panels:
 
 This doc describes how both are built on one shared core.
 
-**Decisions (2026-11-10)**
+**Product decisions**
 
 - Phone-native UI: the same musical behavior, with a modern full-screen layout and no artificial hardware limits.
 - Landscape-first.
-- Personal/sideload build.
-- A Sampler panel added alongside the Synth.
+- Sideloaded build, not distributed through the App Store.
+- A Sampler panel alongside the Synth.
 
 ## 1. Goals & constraints
 
@@ -25,7 +25,7 @@ This doc describes how both are built on one shared core.
 
 - iOS 17+, iPhone landscape first; iPad layout in a later phase.
 - Swift 6, SwiftUI + Observation; C++20 DSP via Swift–C++ interop.
-- **Requires full Xcode**, which isn't installed yet. Only the Command Line Tools are present.
+- Building the app needs full Xcode. The package's tests run with just the Command Line Tools.
 
 **Sideloading.** A free Apple ID signs builds that expire after **7 days**. A paid developer account ($99/yr) gives 1-year builds and TestFlight.
 
@@ -71,7 +71,7 @@ This doc describes how both are built on one shared core.
 
 - **Swift → engine, small commands:** pad down, a parameter change, transport. These go through a lock-free SPSC queue.
 - **Swift → engine, big data:** a sequence's event list, a program's pad map. Swift compiles these into **immutable snapshots** and hands them over with an atomic pointer swap. The old snapshot goes back on a release queue and is freed off the audio thread.
-- **Engine → Swift:** telemetry (playhead, meters, looper/recorder state, tuner pitch, waveform-in-progress) and **recorded events**. Both travel in ring buffers that the UI drains at 60 Hz.
+- **Engine → Swift:** telemetry (playhead, meters, looper/recorder state, tuner pitch, waveform-in-progress) and **recorded events**. Both travel in ring buffers: the UI reads playheads and pad lights every screen refresh (up to 120 Hz) and drains the rest at ~30 Hz.
 
 ## 3. Repository layout
 
@@ -90,10 +90,11 @@ pocketsynth/
 │  │  ├─ SynthDSP/      C++ real-time engine behind a C API (include/SynthDSP.h):
 │  │  │                 Synth.hpp (voices) · Effects.hpp (FX library) · Sampler.hpp ·
 │  │  │                 DSPCommon.hpp (queue, SVF, delay line, noise) · Engine.cpp (mixer, FIFO)
-│  │  ├─ AudioEngine/   EngineBridge, SoundPatches, SampleLibrary (decode + peaks), AudioHost
-│  │  └─ PocketUI/      RootView, synth panel, sampler panel (pads, trim, pad edit, mixer)
-│  │     (later: DSPKit, MIDIBridge targets)
-│  └─ Tests/            ChordTheory · SynthCore · SamplerCore · SynthDSP · AudioEngine
+│  │  ├─ DSPKit/        offline audio: onset/tempo/pitch detection, stretch, processes
+│  │  ├─ AudioEngine/   EngineBridge, SoundPatches, SampleLibrary (decode + peaks), AudioHost,
+│  │  │                 InputMonitor, MIDIManager (CoreMIDI)
+│  │  └─ PocketUI/      RootView, synth panel, sampler panel (pads, editors, mixer, song)
+│  └─ Tests/            ChordTheory · SynthCore · SamplerCore · SynthDSP · DSPKit · AudioEngine
 └─ docs/
 ```
 
@@ -304,7 +305,7 @@ Unchanged from rev 1, except that the menus are now real touch lists *and* the c
   - Song mode uses an engine-side queued sequence that swaps at the end of the current one (or the next bar) and restarts the playhead there.
   - Automation is played from the 30 Hz telemetry loop (fine for mixer-style moves; not sample-accurate).
   - Submix inserts are one effect each (filter, drive, crush), not four; returns are fixed effect types.
-- **Phase 6:** in progress. Done so far: the synth's tool modes and the vocoder (unit- and render-tested; Game and Trainer checked in the simulator; the mic features not yet checked with a real mic). Notes:
+- **Phase 6:** done for v1 (what's left is listed at the end of this entry). Notes:
   - **Tuner:** the input tap also fills a small Swift ring (`InputMonitor`); the main thread runs YIN on the newest 4096 samples ~10×/s, gated at -50 dB, and `TunerSmoother` steadies the needle (a new note needs two readings in a row). Pads are silent in Tuner.
   - **Mic:** hold pad 1 to record (max 3 s, through the shared recorder). The take keeps 1 s from the first sound above -40 dB, YIN finds its pitch, and it is saved as `mic-sample.wav` and played by a new **sample engine** (`PS_ENGINE_SAMPLE`: one pitched one-shot per voice) as the hidden "Mic Sample" sound, in Lead mode. The root is the detected (fractional) pitch, so every note plays in tune; no pitch found = it plays as C. Presets keep the newest take.
   - **Trainer:** six levels in the current key. Questions play on chord slot 0, so pads 1–7 stay free for answering. Answers are compared by sound (root + pitch classes), so two stick moves that make the same chord both count. Modified-chord levels judge on pad release, with the last stick direction of the hold. Playback is timed from the 30 Hz tick (±30 ms), which is fine for listening.
@@ -317,6 +318,11 @@ Unchanged from rev 1, except that the menus are now real touch lists *and* the c
     - *Audio tracks:* a track holds one clip (sample + start tick) played on hidden engine pads, cut at the sequence end; up to 16 per sequence. Audio comes from a pool sample, a synth loop ("Send loop to an audio track"), or recording the Sample view's source into the track (count-in and mic round-trip latency trimmed). No warp yet: audio plays at its own speed.
     - *Clip program:* 16 clips, loop / one-shot / gate, launched on a bar, beat or immediately; one clip per column. "Warp" is varispeed (pitch follows tempo). Clip tracks record launches as notes (start → stop).
     - *Auto-sampler:* plays notes × velocity layers on the synth (or MIDI out → audio in), records each, trims silence and builds a keygroup (zones split halfway, velocity layers).
+  - **Response time:** sound first, then visuals.
+    - The session asks for a 64-frame IO buffer (1.3 ms), also after the mic switches the category. `AudioHost` logs the buffer it actually got. Bluetooth outputs ignore this.
+    - `CADisableMinimumFrameDurationOnPhone` lets ProMotion iPhones run at 120 Hz, so touches arrive every 8 ms instead of every 16 ms.
+    - Fewer main-thread redraws, so touches don't wait behind drawing. The playhead moved out of `TransportState` into `SamplerController.playhead`, plus a once-a-beat `playheadBeat` for the bar.beat readout and grid page-follow. Playhead lines are their own small views. The synth panel and the pad grid are split into layers and cells, and their containers read only geometry. As a result the touch layers aren't rebuilt on every press, and a stick move redraws only the joystick.
+    - A `CADisplayLink` (`FrameDriver`, up to 120 Hz) drives the playheads, clip and chord-step lights, and **pad lights**. The engine counts every pad that sounds (`ps_sampler_pad_hits`), so pads also light during sequence playback and note repeat. Telemetry and housekeeping still run at ~30 Hz.
   - Still to do in phase 6 (not needed for v1): synth editors, iPad layout, AUv3, (optional) stem separation, real-time warp for audio tracks and clips.
 - **Phase 4:** done. Notes:
   - The looper and the recorder write into the same 2-channel `PSSample` buffers the sampler plays. The main thread allocates them; the audio thread hands them back through the garbage queue. Looper commands carry a generation number, which telemetry echoes, so the controller ignores reports older than its last command.
@@ -326,17 +332,7 @@ Unchanged from rev 1, except that the menus are now real touch lists *and* the c
   - Chop converts onto the first empty bank, so existing pads aren't overwritten. "Pads + sequence" is one undo step.
   - Not done in phase 4: the looper's per-track MIDI events (phase 5, with MIDI), keygroup "patched phrase" conversion (phase 5, with keygroups), Seq-mode auto-bounce to the looper, and per-pad warp.
 
-## 11. IP notes (personal build)
+## 11. IP notes
 
-- For a personal, sideloaded build, patent and trade-dress risk is low.
-- We still keep both panels free of the HiChord and MPC/Akai names, logos, skins and factory or expansion content. This keeps a future public release possible without a rewrite.
-- **Third-party code:** permissive licenses are preferred (Signalsmith Stretch is MIT). GPL code (e.g. Rubber Band) is acceptable for a personal build, but would block an App Store release later. **Default: avoid it.**
-
-## 12. Open questions
-
-1. The **[DECIDE]** items in SYNTH_SPEC.md. Proposed defaults are used unless you say otherwise.
-2. Default sampler velocity mode: touch position (proposed) vs. touch size vs. fixed.
-3. Build order:
-   - **Option A (proposed):** interleaved, as in §10.
-   - **Option B:** the synth first to completion, then the sampler.
-   - **Option C:** the sampler first.
+- Both panels stay free of the HiChord and MPC/Akai names, logos, skins and factory or expansion content, so a public release needs no rewrite.
+- **Third-party code:** permissive licenses only (Signalsmith Stretch is MIT). GPL code (e.g. Rubber Band) would block an App Store release, so it is avoided.

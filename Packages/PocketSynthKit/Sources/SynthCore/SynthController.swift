@@ -63,7 +63,8 @@ public final class SynthController {
     @ObservationIgnored private var clickConsumed = false
     /// Mixer mode: pads held for a combo (solo, wheel) don't mute on release.
     @ObservationIgnored private var mixerComboPads: Set<Int> = []
-    @ObservationIgnored private var heldMenus: Set<MenuKey> = []
+    /// Observed: the K/S/M keys light from it.
+    private var heldMenus: Set<MenuKey> = []
     @ObservationIgnored private var comboUsed: Set<MenuKey> = []
     @ObservationIgnored private var menuOpenedBy: MenuKey?
     @ObservationIgnored private var lastActivity = 0.0

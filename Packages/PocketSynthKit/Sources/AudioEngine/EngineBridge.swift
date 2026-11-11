@@ -439,6 +439,17 @@ public final class EngineBridge {
         (0..<Int(PS_CLIPS)).map { ClipState(rawValue: Int(ps_clip_state(engine, Int32($0)))) ?? .stopped }
     }
 
+    /// Pad lights: how many times each pad has sounded (wrapping) and its latest velocity.
+    /// Fills the caller's arrays (sized to the pad count) so a display-rate poll allocates nothing.
+    public func readPadHits(counts: inout [UInt32], velocities: inout [UInt8]) {
+        let n = Int32(min(counts.count, velocities.count))
+        counts.withUnsafeMutableBufferPointer { c in
+            velocities.withUnsafeMutableBufferPointer { v in
+                ps_sampler_pad_hits(engine, c.baseAddress, v.baseAddress, n)
+            }
+        }
+    }
+
     public var transportTicks: Double { ps_transport_ticks(engine) }
     public var sequenceGeneration: Int { Int(ps_transport_sequence_generation(engine)) }
     public var transportPlaying: Bool { ps_transport_playing(engine) != 0 }
