@@ -496,6 +496,8 @@ public final class AppModel {
     /// Files from the last export (in Documents/PocketSynth/Exports, visible in Files).
     public private(set) var exportedFiles: [URL] = []
     public private(set) var exporting = false
+    /// The last export's outcome, shown in the export sheet (an alert would close it).
+    public private(set) var exportStatus: String?
 
     var exportsDirectory: URL { store.directory.appendingPathComponent("Exports", isDirectory: true) }
 
@@ -554,10 +556,12 @@ public final class AppModel {
     public func export(_ kind: ExportKind, source: ExportSource, bitDepth: Int = 24) async {
         guard !exporting else { return }
         guard let seq = exportSequence(source) else {
-            importMessage = "The song is empty. Add steps in Song first."
+            exportStatus = "The song is empty. Add steps in Song first."
             return
         }
         exporting = true
+        exportStatus = nil
+        exportedFiles = []
         busy = "Exporting…"
         defer { exporting = false; busy = nil }
         do {
@@ -585,9 +589,9 @@ public final class AppModel {
                 }
             }
             exportedFiles = files
-            importMessage = files.isEmpty ? "Nothing to export." : "Exported \(files.count) file\(files.count == 1 ? "" : "s") to Files › PocketSynth › Exports."
+            exportStatus = files.isEmpty ? "Nothing to export." : "Exported \(files.count) file\(files.count == 1 ? "" : "s")."
         } catch {
-            importMessage = "Export failed: \(error.localizedDescription)"
+            exportStatus = "Export failed: \(error.localizedDescription)"
         }
     }
 

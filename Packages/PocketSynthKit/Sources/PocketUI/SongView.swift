@@ -69,17 +69,19 @@ struct SongView: View {
         let name = seqs.indices.contains(step.sequence) ? seqs[step.sequence].name : "Missing"
         let bars = seqs.indices.contains(step.sequence) ? seqs[step.sequence].bars : 0
         let now = playing?.step == i
-        return HStack(spacing: 8) {
+        return HStack(spacing: 6) {
             Text("\(i + 1)").font(.system(size: 12, weight: .bold, design: .monospaced)).foregroundStyle(Theme.dim).frame(width: 20)
             Menu {
                 ForEach(seqs.indices, id: \.self) { s in
                     Button(seqs[s].name) { sampler.editSong("Step sequence") { $0.steps[i].sequence = s } }
                 }
             } label: {
-                Text(name).font(.callout.bold()).foregroundStyle(Theme.text).lineLimit(1)
+                VStack(alignment: .leading, spacing: 0) {
+                    Text(name).font(.callout.bold()).foregroundStyle(Theme.text).lineLimit(1)
+                    Text("\(bars) bar\(bars == 1 ? "" : "s")").font(.caption2).foregroundStyle(Theme.dim)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
-            Text("\(bars) bar\(bars == 1 ? "" : "s")").font(.caption).foregroundStyle(Theme.dim)
-            Spacer()
             if now, let p = playing { Text("▶ \(p.pass)/\(step.repeats)").font(.caption.monospacedDigit().bold()).foregroundStyle(Theme.accent) }
             ToolButton(icon: "minus") { sampler.editSong("Repeats") { $0.steps[i].repeats = max(1, $0.steps[i].repeats - 1) } }
             Text("×\(step.repeats)").font(.system(size: 12, weight: .bold, design: .monospaced)).foregroundStyle(Theme.text).frame(width: 30)
@@ -132,8 +134,8 @@ struct ExportSheet: View {
                 } footer: {
                     Text("Files go to Files › On My iPhone › PocketSynth › Exports. Live synth playing and the looper aren't included; synth tracks are.")
                 }
-                if !model.exportedFiles.isEmpty, !model.exporting {
-                    Section("Exported") {
+                if !model.exporting, let status = model.exportStatus {
+                    Section(status) {
                         ForEach(model.exportedFiles, id: \.self) { url in
                             ShareLink(item: url) { Label(url.lastPathComponent, systemImage: "square.and.arrow.up") }
                         }

@@ -332,11 +332,11 @@ struct ToolLabel: View {
 
     var body: some View {
         HStack(spacing: 3) {
-            if let text { Text(text).font(.system(size: 11, weight: .bold, design: .monospaced)) }
+            if let text { Text(text).font(.system(size: 11, weight: .bold, design: .monospaced)).fixedSize() }
             if let icon { Image(systemName: icon).font(.system(size: 10, weight: .bold)) }
         }
         .lineLimit(1)
-        .padding(.horizontal, 8)
+        .padding(.horizontal, 7)
         .frame(height: 26)
         .foregroundStyle(on ? Theme.accent : Theme.text)
         .background(RoundedRectangle(cornerRadius: 6).fill(Theme.raised))

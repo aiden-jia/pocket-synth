@@ -35,6 +35,16 @@ public enum TrackProgram: Hashable, Codable, Sendable {
 
     public var isNotes: Bool { self != .drum }
 
+    /// Two or three characters for tight toolbars.
+    public var shortLabel: String {
+        switch self {
+        case .drum: "DR"
+        case .keygroup(let i): "K\(i + 1)"
+        case .synth: "SY"
+        case .midi(let ch): "M\(ch)"
+        }
+    }
+
     public var label: String {
         switch self {
         case .drum: "Drum"

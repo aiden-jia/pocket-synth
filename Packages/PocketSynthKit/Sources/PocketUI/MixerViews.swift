@@ -193,13 +193,17 @@ struct Knob: View {
             .contentShape(Rectangle())
             .gesture(DragGesture(minimumDistance: 0)
                 .onChanged { g in
+                    guard g.translation.height != 0 else { return } // a plain tap changes nothing
                     if start == nil { start = value }
                     let delta = -g.translation.height / 150 * (range.upperBound - range.lowerBound)
                     onChange(min(range.upperBound, max(range.lowerBound, start! + delta)))
                 }
-                .onEnded { _ in start = nil; onEnd() })
+                .onEnded { _ in
+                    if start != nil { onEnd() }
+                    start = nil
+                })
             if let label {
-                Text(label).font(.system(size: 9, weight: .bold, design: .monospaced)).foregroundStyle(Theme.dim).lineLimit(1)
+                Text(label).font(.system(size: 9, weight: .bold, design: .monospaced)).foregroundStyle(Theme.dim).lineLimit(1).minimumScaleFactor(0.7)
             }
         }
     }
@@ -211,18 +215,22 @@ struct QLinkStrip: View {
 
     var body: some View {
         HStack(spacing: 10) {
-            VStack(alignment: .leading, spacing: 4) {
-                Picker("Q-Link", selection: $sampler.qlinkPage) {
-                    ForEach(QLinkPage.allCases, id: \.self) { Text($0.label).tag($0) }
+            VStack(alignment: .leading, spacing: 8) {
+                Menu {
+                    Picker("Q-Link", selection: $sampler.qlinkPage) {
+                        ForEach(QLinkPage.allCases, id: \.self) { Text($0.label).tag($0) }
+                    }
+                } label: {
+                    menuLabel(sampler.qlinkPage.label.uppercased(), color: Theme.accent)
                 }
-                .pickerStyle(.menu)
-                .font(.caption)
-                Picker("Auto", selection: $sampler.automationMode) {
-                    ForEach(AutomationMode.allCases, id: \.self) { Text("Auto \($0.label)").tag($0) }
+                Menu {
+                    Picker("Automation", selection: $sampler.automationMode) {
+                        ForEach(AutomationMode.allCases, id: \.self) { Text($0.label).tag($0) }
+                    }
+                } label: {
+                    menuLabel("AUTO " + sampler.automationMode.label.uppercased(),
+                              color: sampler.automationMode == .write ? .red : Theme.dim)
                 }
-                .pickerStyle(.menu)
-                .font(.caption)
-                .tint(sampler.automationMode == .write ? .red : Theme.dim)
             }
             .frame(width: 104)
             ForEach(Array(sampler.qlinks.enumerated()), id: \.offset) { i, p in
@@ -240,6 +248,15 @@ struct QLinkStrip: View {
         }
         .padding(.horizontal, 10).padding(.vertical, 6)
         .background(RoundedRectangle(cornerRadius: 12).fill(Theme.panel))
+    }
+
+    private func menuLabel(_ text: String, color: Color) -> some View {
+        HStack(spacing: 3) {
+            Text(text).lineLimit(1).fixedSize()
+            Image(systemName: "chevron.up.chevron.down").font(.system(size: 8, weight: .bold))
+        }
+        .font(.system(size: 11, weight: .bold, design: .monospaced))
+        .foregroundStyle(color)
     }
 
     @ViewBuilder

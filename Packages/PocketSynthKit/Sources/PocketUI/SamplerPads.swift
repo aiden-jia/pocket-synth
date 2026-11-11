@@ -38,7 +38,7 @@ struct PadGridView: View {
                     let p = s.project.program.pads[pad]
                     let notes = s.track.program.isNotes
                     let stepping = s.view == .grid && s.seqEditor == .step
-                    SamplerPadView(name: stepping ? "STEP \(g + 1)" : notes ? PitchName.noteName(s.perform.note(g)) : PadAddress.name(pad),
+                    SamplerPadView(name: stepping ? "\(g + 1)" : notes ? PitchName.noteName(s.perform.note(g)) : PadAddress.name(pad),
                                    sampleName: stepping ? (s.stepIsOn(g) ? "●" : nil)
                                        : notes ? s.track.program.label : levelLabel(s, g) ?? s.project.sample(p.primarySample)?.name,
                                    held: s.heldPads.contains(pad),

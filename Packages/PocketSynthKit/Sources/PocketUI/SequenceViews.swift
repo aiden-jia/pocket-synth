@@ -47,10 +47,12 @@ struct SeqView: View {
             }
             TrackMenu(sampler: sampler)
             Picker("Editor", selection: $sampler.seqEditor) {
-                ForEach(SeqEditor.allCases, id: \.self) { Text($0.label).tag($0) }
+                Image(systemName: "rectangle.split.3x3").tag(SeqEditor.grid)
+                Image(systemName: "list.bullet").tag(SeqEditor.list)
+                Image(systemName: "square.grid.4x3.fill").tag(SeqEditor.step)
             }
             .pickerStyle(.segmented)
-            .frame(width: 130)
+            .frame(width: 104)
             Menu {
                 Picker("Note value", selection: Binding(get: { tc.value }, set: { v in sampler.setTimingCorrect { $0.value = v } })) {
                     ForEach(NoteValue.allCases, id: \.self) { Text($0.label).tag($0) }
@@ -65,7 +67,7 @@ struct SeqView: View {
                 Divider()
                 Button("Quantize all notes", systemImage: "wand.and.stars") { sampler.quantizeTrack() }
             } label: {
-                ToolLabel(text: "TC \(tc.value.label)", icon: "chevron.down", on: tc.onInput)
+                ToolLabel(text: tc.value.label, icon: "chevron.down", on: tc.onInput)
             }
             Menu {
                 Section("Length: \(seq.bars) bar\(seq.bars == 1 ? "" : "s")") {
@@ -127,7 +129,7 @@ struct TrackMenu: View {
             }
             Menu("New track") { programButtons { sampler.addTrack($0) } }
         } label: {
-            ToolLabel(text: "T\(sampler.trackIndex + 1) \(t.program.label.uppercased())", icon: "chevron.down", on: t.solo)
+            ToolLabel(text: "T\(sampler.trackIndex + 1)·\(t.program.shortLabel)", icon: "chevron.down", on: t.solo)
         }
     }
 
